@@ -514,6 +514,51 @@
         .tab-btn:active { transform: translateY(1px); }
         .tab-btn.active { background: var(--bg-well); border-color: var(--border-subtle); color: var(--binance-gold); }
 
+        .table-topbar {
+            background: #0e1218;
+            border-bottom: 1px solid var(--border-dim);
+            padding: 0.4rem 0.65rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .btn-topbar {
+            background: #121820;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-main);
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 0.25rem 0.55rem;
+            min-height: 26px;
+            border-radius: 2px;
+            cursor: pointer;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.5);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            text-decoration: none;
+            transition: all 0.1s;
+        }
+        .btn-topbar:hover {
+            border-color: var(--binance-gold);
+            color: #fff;
+        }
+        .btn-topbar:active {
+            transform: translateY(1px);
+        }
+        .btn-topbar-danger {
+            color: var(--color-short);
+            border-color: rgba(246, 70, 93, 0.4);
+        }
+        .btn-topbar-danger:hover {
+            background: rgba(246, 70, 93, 0.15);
+            border-color: var(--color-short);
+            color: #fff;
+        }
+
         .table-responsive { max-height: 270px; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; }
         table { width: 100%; border-collapse: collapse; font-size: 0.74rem; text-align: left; min-width: 520px; }
         th { background: var(--bg-well); color: var(--text-muted); padding: 0.45rem 0.6rem; font-weight: 700; letter-spacing: 0.04em; position: sticky; top: 0; border-bottom: 1px solid var(--border-dim); }
@@ -734,13 +779,14 @@
                 <div class="tabs mono">
                     <button class="tab-btn active" id="tab-btn-logs" onclick="switchTab('logs')">TTY CONSOLE STREAM</button>
                     <button class="tab-btn" id="tab-btn-trades" onclick="switchTab('trades')">TRADE AUDIT (<span id="count-trades">0</span>)</button>
+                    <button class="tab-btn" id="tab-btn-binance" onclick="switchTab('binance')">BINANCE TESTNET (<span id="count-binance-trades">0</span>)</button>
                 </div>
 
                 <!-- TAB 1: TERMINAL LOG STREAM -->
                 <div id="tab-content-logs">
                     <div class="console-wrapper">
                         <div class="console-topbar mono">
-                            <span>>_ STANDALONE ON-DEVICE LOGS</span>
+                            <span>&gt;_ STANDALONE ON-DEVICE LOGS</span>
                             <div style="display: flex; gap: 0.5rem; align-items: center;">
                                 <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer; color: var(--text-muted); font-size: 0.68rem;">
                                     <input type="checkbox" id="chk-autoscroll" checked> AUTO-SCROLL
@@ -758,25 +804,73 @@
                     </div>
                 </div>
 
-                <!-- TAB 2: COMPLETED TRADES TABLE -->
+                <!-- TAB 2: COMPLETED TRADES TABLE (PERSISTENT JSON) -->
                 <div id="tab-content-trades" style="display: none;">
+                    <div class="table-topbar mono">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.7rem;">
+                            <span class="pos-badge pos-badge-flat" style="border-color: rgba(240,185,11,0.4); color: var(--binance-gold); background: rgba(240,185,11,0.08);">PERSISTENT JSON</span>
+                            <span style="color: var(--text-muted); font-size: 0.68rem;">localStorage (vtrail_trades)</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.4rem;">
+                            <button type="button" class="btn-topbar mono" onclick="exportTradeHistory()" title="Download data riwayat trade JSON">EXPORT JSON</button>
+                            <button type="button" class="btn-topbar btn-topbar-danger mono" onclick="clearTradeHistory()" title="Hapus riwayat trade dari penyimpanan persisten">HAPUS / CLEAR</button>
+                        </div>
+                    </div>
                     <div class="table-responsive">
                         <table>
                             <thead>
                                 <tr>
+                                    <th>ID / ORDER</th>
                                     <th>SIDE</th>
                                     <th>ENTRY</th>
                                     <th>EXIT</th>
-                                    <th>NET PNL</th>
+                                    <th>QTY</th>
+                                    <th>NOTIONAL</th>
+                                    <th>REALIZED PNL</th>
                                     <th>ROI</th>
-                                    <th>PEAK</th>
                                     <th>REASON</th>
                                     <th>TIME</th>
                                 </tr>
                             </thead>
                             <tbody id="trades-tbody" class="mono">
                                 <tr>
-                                    <td colspan="8" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat trade.</td>
+                                    <td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat trade.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB 3: BINANCE TESTNET OFFICIAL ENDPOINT (/fapi/v1/userTrades) -->
+                <div id="tab-content-binance" style="display: none;">
+                    <div class="table-topbar mono">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.7rem;">
+                            <span class="pos-badge pos-badge-flat" style="border-color: rgba(14,203,129,0.4); color: var(--color-long); background: rgba(14,203,129,0.08);">GET /fapi/v1/userTrades</span>
+                            <span id="binance-status-label" style="color: var(--text-muted); font-size: 0.68rem;">Binance Testnet Filled Trades</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.4rem;">
+                            <button type="button" class="btn-topbar mono" onclick="fetchBinanceTrades(true)" id="btn-sync-binance">SYNC DARI BINANCE</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>TRADE ID</th>
+                                    <th>ORDER ID</th>
+                                    <th>SIDE</th>
+                                    <th>PRICE</th>
+                                    <th>QTY</th>
+                                    <th>NOTIONAL (USDT)</th>
+                                    <th>REALIZED PNL</th>
+                                    <th>FEE</th>
+                                    <th>ROLE</th>
+                                    <th>TIME</th>
+                                </tr>
+                            </thead>
+                            <tbody id="binance-trades-tbody" class="mono">
+                                <tr>
+                                    <td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Tekan 'SYNC DARI BINANCE' atau pastikan API Key testnet terpasang.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -994,7 +1088,56 @@
         let pendingSl = 0.0;
         let pendingBarCount = 0;
         let eventLogs = [];
+        let tradeIdCounter = 0;
         let tradeHistory = [];
+
+        function loadTradeHistory() {
+            try {
+                const s = localStorage.getItem('vtrail_trades');
+                if (s) {
+                    const parsed = JSON.parse(s);
+                    if (Array.isArray(parsed)) {
+                        tradeHistory = parsed;
+                        tradeIdCounter = tradeHistory.reduce((max, t) => Math.max(max, parseInt(t.id || 0)), 0);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to load tradeHistory:', e);
+            }
+        }
+
+        function saveTradeHistory() {
+            try {
+                localStorage.setItem('vtrail_trades', JSON.stringify(tradeHistory));
+            } catch (e) {
+                console.error('Failed to save tradeHistory:', e);
+            }
+        }
+
+        function clearTradeHistory() {
+            if (!confirm('Hapus seluruh riwayat trade dari penyimpanan persisten? Tindakan ini permanen.')) return;
+            tradeHistory = [];
+            saveTradeHistory();
+            renderTradesTable();
+            logEvent('STATUS', 'Riwayat trade berhasil dihapus dari penyimpanan persisten.');
+        }
+
+        function exportTradeHistory() {
+            try {
+                const jsonStr = JSON.stringify(tradeHistory, null, 2);
+                const blob = new Blob([jsonStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'vtrail_trades_history.json';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (e) {
+                alert('Gagal export data: ' + e.message);
+            }
+        }
 
         function logEvent(category, text) {
             const time = new Date().toLocaleTimeString();
@@ -1054,14 +1197,20 @@
 
         function switchTab(tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-content-logs').style.display = 'none';
+            document.getElementById('tab-content-trades').style.display = 'none';
+            document.getElementById('tab-content-binance').style.display = 'none';
+
             if (tab === 'logs') {
                 document.getElementById('tab-btn-logs').classList.add('active');
                 document.getElementById('tab-content-logs').style.display = 'block';
-                document.getElementById('tab-content-trades').style.display = 'none';
-            } else {
+            } else if (tab === 'trades') {
                 document.getElementById('tab-btn-trades').classList.add('active');
-                document.getElementById('tab-content-logs').style.display = 'none';
                 document.getElementById('tab-content-trades').style.display = 'block';
+            } else if (tab === 'binance') {
+                document.getElementById('tab-btn-binance').classList.add('active');
+                document.getElementById('tab-content-binance').style.display = 'block';
+                fetchBinanceTrades();
             }
         }
 
@@ -1173,6 +1322,82 @@
             } catch (err) {
                 resEl.innerText = `[ERR] ${err.message}`;
                 resEl.className = 'mono color-red';
+            }
+        }
+
+        async function fetchBinanceTrades(manual = false) {
+            const btn = document.getElementById('btn-sync-binance');
+            const lbl = document.getElementById('binance-status-label');
+            const apiKey = cfg.api_key;
+            const apiSecret = cfg.api_secret;
+            const sym = cfg.symbol || 'BTCUSDT';
+
+            if (!apiKey || !apiSecret) {
+                if (lbl) lbl.innerText = 'Testnet API Key belum diisi di Settings.';
+                if (manual) alert('Harap isi API Key & Secret Binance Testnet di menu Settings terlebih dahulu.');
+                return;
+            }
+
+            if (manual && btn) btn.innerText = 'SYNCING...';
+
+            try {
+                const ts = Date.now();
+                const query = `symbol=${encodeURIComponent(sym)}&limit=50&timestamp=${ts}`;
+                const signature = await hmacSha256(apiSecret, query);
+                const url = `https://testnet.binancefuture.com/fapi/v1/userTrades?${query}&signature=${signature}`;
+
+                const resp = await fetch(url, {
+                    headers: { 'X-MBX-APIKEY': apiKey }
+                });
+                const data = await resp.json();
+
+                if (Array.isArray(data)) {
+                    document.getElementById('count-binance-trades').innerText = data.length;
+                    if (lbl) lbl.innerText = `Terhubung: ${data.length} trade dieksekusi`;
+
+                    if (data.length === 0) {
+                        document.getElementById('binance-trades-tbody').innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat order/trade terisi di akun testnet ini.</td></tr>';
+                    } else {
+                        let html = '';
+                        const reversed = [...data].reverse();
+                        reversed.forEach(t => {
+                            const isBuy = (t.side || '').toUpperCase() === 'BUY';
+                            const sideClass = isBuy ? 'color-green' : 'color-red';
+                            const pnl = parseFloat(t.realizedPnl || 0);
+                            const pnlClass = pnl > 0 ? 'color-green' : (pnl < 0 ? 'color-red' : '');
+                            const price = parseFloat(t.price || 0);
+                            const qty = parseFloat(t.qty || 0);
+                            const notional = parseFloat(t.quoteQty || (price * qty));
+                            const comm = parseFloat(t.commission || 0);
+                            const timeStr = new Date(t.time).toLocaleTimeString();
+
+                            html += `
+                                <tr>
+                                    <td style="color: var(--text-muted); font-size: 0.7rem;">#${t.id || '-'}</td>
+                                    <td style="color: var(--text-muted); font-size: 0.7rem;">${t.orderId || '-'}</td>
+                                    <td class="${sideClass} font-bold">${t.side}</td>
+                                    <td>${fmtPx(price)}</td>
+                                    <td>${qty.toFixed(4)}</td>
+                                    <td>$${notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    <td class="${pnlClass} font-bold">${fmtUsd(pnl)}</td>
+                                    <td style="color: var(--text-dim);">${comm.toFixed(4)} ${t.commissionAsset || 'USDT'}</td>
+                                    <td><span class="pos-badge pos-badge-flat" style="font-size: 0.65rem;">${t.maker ? 'MAKER' : 'TAKER'}</span></td>
+                                    <td style="color: var(--text-dim);">${timeStr}</td>
+                                </tr>
+                            `;
+                        });
+                        document.getElementById('binance-trades-tbody').innerHTML = html;
+                    }
+                } else {
+                    const err = data.msg || JSON.stringify(data);
+                    if (lbl) lbl.innerText = err;
+                    if (manual) alert('Gagal mengambil data dari Binance Testnet: ' + err);
+                }
+            } catch (err) {
+                if (lbl) lbl.innerText = 'Error: ' + err.message;
+                if (manual) alert('Koneksi error: ' + err.message);
+            } finally {
+                if (manual && btn) btn.innerText = 'SYNC DARI BINANCE';
             }
         }
 
@@ -1416,17 +1641,33 @@
 
                 const roiPct = posMarginUsed > 0 ? (netPnl / posMarginUsed) * 100.0 : 0.0;
                 const sideStr = posSide === 1 ? 'LONG' : 'SHORT';
+                const nowDt = new Date();
+                tradeIdCounter++;
 
-                tradeHistory.unshift({
+                const tradeRecord = {
+                    id: tradeIdCounter,
+                    order_id: Math.floor(Date.now() / 1000) + tradeIdCounter,
+                    symbol: cfg.symbol,
                     side: sideStr,
-                    entry_price: posEntryPrice,
-                    exit_price: exitPx,
-                    net_pnl: netPnl,
-                    roi_pct: roiPct,
-                    peak_pct: peakPct,
+                    entry_price: Number(posEntryPrice.toFixed(2)),
+                    exit_price: Number(exitPx.toFixed(2)),
+                    qty: Number(posQty.toFixed(4)),
+                    quote_qty: Number((posQty * exitPx).toFixed(2)),
+                    commission: Number(takerFee.toFixed(4)),
+                    commission_asset: 'USDT',
+                    realized_pnl: Number(netPnl.toFixed(2)),
+                    net_pnl: Number(netPnl.toFixed(2)),
+                    roi_pct: Number(roiPct.toFixed(2)),
+                    peak_pct: Number(peakPct.toFixed(2)),
                     reason: exitReason,
-                    time: new Date().toLocaleTimeString()
-                });
+                    exit_time: nowDt.toLocaleTimeString(),
+                    exit_date: nowDt.toISOString().slice(0, 10),
+                    time: nowDt.toLocaleTimeString(),
+                    time_ms: Date.now()
+                };
+
+                tradeHistory.unshift(tradeRecord);
+                saveTradeHistory();
                 renderTradesTable();
 
                 const sign = netPnl >= 0 ? '+' : '-';
@@ -1441,9 +1682,39 @@
             const mmr = (posQty * worstPrice) * (cfg.mmr_pct / 100.0);
             if ((walletBalance + upnl) <= mmr) {
                 isLiquidated = true;
+                const sideStr = posSide === 1 ? 'LONG' : 'SHORT';
+                const nowDt = new Date();
+                tradeIdCounter++;
+
+                const tradeRecord = {
+                    id: tradeIdCounter,
+                    order_id: Math.floor(Date.now() / 1000) + tradeIdCounter,
+                    symbol: cfg.symbol,
+                    side: sideStr,
+                    entry_price: Number(posEntryPrice.toFixed(2)),
+                    exit_price: Number(worstPrice.toFixed(2)),
+                    qty: Number(posQty.toFixed(4)),
+                    quote_qty: Number((posQty * worstPrice).toFixed(2)),
+                    commission: 0,
+                    commission_asset: 'USDT',
+                    realized_pnl: Number((-posMarginUsed).toFixed(2)),
+                    net_pnl: Number((-posMarginUsed).toFixed(2)),
+                    roi_pct: -100.0,
+                    peak_pct: 0.0,
+                    reason: 'LIQUIDATED (Margin Call)',
+                    exit_time: nowDt.toLocaleTimeString(),
+                    exit_date: nowDt.toISOString().slice(0, 10),
+                    time: nowDt.toLocaleTimeString(),
+                    time_ms: Date.now()
+                };
+
+                tradeHistory.unshift(tradeRecord);
+                saveTradeHistory();
+                renderTradesTable();
+
                 walletBalance = 0.0;
                 updateDashboardBalance();
-                logEvent('LIQUIDATED', `LIQUIDATED (Margin Call) pada harga ${fmtPx(worstPrice)}. Saldo habis.`);
+                logEvent('LIQUIDATED', `LIQUIDATED (Margin Call) pada harga ${fmtPx(worstPrice)}. Saldo habis ($0.00).`);
                 posSide = 0;
             }
         }
@@ -1543,31 +1814,40 @@
 
         function renderTradesTable() {
             document.getElementById('count-trades').innerText = tradeHistory.length;
+            if (tradeHistory.length === 0) {
+                document.getElementById('trades-tbody').innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat trade tersimpan di penyimpanan persisten.</td></tr>';
+                return;
+            }
             let html = '';
             tradeHistory.forEach(t => {
-                const isWin = t.net_pnl >= 0;
+                const pnlVal = t.net_pnl !== undefined ? t.net_pnl : t.realized_pnl;
+                const isWin = pnlVal >= 0;
                 const pnlClass = isWin ? 'color-green' : 'color-red';
                 const sideClass = t.side === 'LONG' ? 'color-green' : 'color-red';
+                const notional = t.quote_qty ? t.quote_qty : (t.exit_price * (t.qty || 0));
                 html += `
                     <tr>
+                        <td style="color: var(--text-muted); font-size: 0.7rem;">#${t.id || '-'}${t.order_id ? ' <span style="color:var(--text-dim);">/' + t.order_id + '</span>' : ''}</td>
                         <td class="${sideClass} font-bold">${t.side}</td>
                         <td>${fmtPx(t.entry_price)}</td>
                         <td>${fmtPx(t.exit_price)}</td>
-                        <td class="${pnlClass} font-bold">${fmtUsd(t.net_pnl)}</td>
-                        <td class="${pnlClass}">${(t.roi_pct >= 0 ? '+' : '') + t.roi_pct.toFixed(2)}%</td>
-                        <td>+${t.peak_pct.toFixed(2)}%</td>
+                        <td>${t.qty ? t.qty.toFixed(4) : '-'}</td>
+                        <td>$${notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        <td class="${pnlClass} font-bold">${fmtUsd(pnlVal)}</td>
+                        <td class="${pnlClass}">${(t.roi_pct >= 0 ? '+' : '') + (t.roi_pct || 0).toFixed(2)}%</td>
                         <td><span class="pos-badge pos-badge-flat" style="font-size: 0.65rem;">${t.reason}</span></td>
-                        <td class="mono" style="color: var(--text-dim);">${t.time}</td>
+                        <td class="mono" style="color: var(--text-dim);">${t.exit_time || t.time || '-'}</td>
                     </tr>
                 `;
             });
-            document.getElementById('trades-tbody').innerHTML = html || '<tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat trade.</td></tr>';
+            document.getElementById('trades-tbody').innerHTML = html;
         }
 
         function resetStrategy() {
             if (!confirm('Apakah Anda yakin ingin me-reset saldo simulasi dan riwayat trade?')) return;
             posSide = 0; hasPending = false; isLiquidated = false;
             tradeHistory = [];
+            saveTradeHistory();
             renderTradesTable();
             logEvent('STATUS', 'Strategi berhasil di-reset ke kondisi awal.');
             updatePositionUI(lastPrice);
@@ -1745,6 +2025,8 @@
         }
 
         populateForm();
+        loadTradeHistory();
+        renderTradesTable();
         updateBotUI(false);
         updateDashboardBalance();
         startEngine();

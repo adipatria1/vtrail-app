@@ -594,6 +594,51 @@ def reset_strategy():
     return jsonify({"success": True, "message": "Simulasi berhasil di-reset."})
 
 
+@app.route("/api/trades", methods=["GET"])
+def get_trades():
+    """Mengambil riwayat trade persisten bot."""
+    with manager.lock:
+        trades = manager.strat_engine.trade_history if manager.strat_engine else []
+    return jsonify({"success": True, "trades": trades, "count": len(trades)})
+
+
+@app.route("/api/trades", methods=["DELETE"])
+@app.route("/api/trades/clear", methods=["POST"])
+def clear_trades():
+    """Menghapus seluruh riwayat trade persisten dari file JSON."""
+    with manager.lock:
+        if manager.strat_engine:
+            manager.strat_engine.clear_trade_history()
+    return jsonify({"success": True, "message": "Riwayat trade berhasil dihapus dari file persisten."})
+
+
+@app.route("/api/trades/export", methods=["GET"])
+def export_trades():
+    """Download riwayat trade sebagai file JSON."""
+    from strategy import TRADES_FILE
+    if os.path.exists(TRADES_FILE):
+        return send_file(
+            TRADES_FILE,
+            as_attachment=True,
+            download_name="vtrail_trades_history.json",
+            mimetype="application/json"
+        )
+    # Jika belum ada file, kirim array kosong
+    return Response("[]", mimetype="application/json", headers={"Content-Disposition": "attachment; filename=vtrail_trades_history.json"})
+
+
+@app.route("/api/binance/trades", methods=["GET"])
+def get_binance_trades():
+    """Mengambil riwayat trade resmi langsung dari endpoint GET /fapi/v1/userTrades Binance Testnet."""
+    symbol = request.args.get("symbol") or manager.config.get("symbol", "BTCUSDT")
+    limit = int(request.args.get("limit", 50))
+    with manager.lock:
+        if not manager.binance_client:
+            return jsonify({"success": False, "error": "Binance Client belum diinisialisasi.", "trades": []})
+        res = manager.binance_client.get_user_trades(symbol=symbol, limit=limit)
+    return jsonify(res)
+
+
 @app.route("/api/bot/toggle", methods=["POST"])
 def toggle_bot():
     """Start / Stop bot trading logic."""

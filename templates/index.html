@@ -584,6 +584,51 @@
             color: var(--binance-gold);
         }
 
+        .table-topbar {
+            background: #0e1218;
+            border-bottom: 1px solid var(--border-dim);
+            padding: 0.4rem 0.65rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .btn-topbar {
+            background: #121820;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-main);
+            font-size: 0.68rem;
+            font-weight: 700;
+            padding: 0.25rem 0.55rem;
+            min-height: 26px;
+            border-radius: 2px;
+            cursor: pointer;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), 0 1px 2px rgba(0,0,0,0.5);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            text-decoration: none;
+            transition: all 0.1s;
+        }
+        .btn-topbar:hover {
+            border-color: var(--binance-gold);
+            color: #fff;
+        }
+        .btn-topbar:active {
+            transform: translateY(1px);
+        }
+        .btn-topbar-danger {
+            color: var(--color-short);
+            border-color: rgba(246, 70, 93, 0.4);
+        }
+        .btn-topbar-danger:hover {
+            background: rgba(246, 70, 93, 0.15);
+            border-color: var(--color-short);
+            color: #fff;
+        }
+
         .table-responsive {
             max-height: 270px;
             overflow-y: auto;
@@ -930,13 +975,14 @@
                 <div class="tabs mono">
                     <button class="tab-btn active" id="tab-btn-logs" onclick="switchTab('logs')">TTY CONSOLE STREAM</button>
                     <button class="tab-btn" id="tab-btn-trades" onclick="switchTab('trades')">TRADE AUDIT (<span id="count-trades">0</span>)</button>
+                    <button class="tab-btn" id="tab-btn-binance" onclick="switchTab('binance')">BINANCE TESTNET (<span id="count-binance-trades">0</span>)</button>
                 </div>
 
                 <!-- TAB 1: TERMINAL LOG STREAM -->
                 <div id="tab-content-logs">
                     <div class="console-wrapper">
                         <div class="console-topbar mono">
-                            <span>>_ REAL-TIME QUANT EVENT FEED</span>
+                            <span>&gt;_ REAL-TIME QUANT EVENT FEED</span>
                             <div style="display: flex; gap: 0.5rem; align-items: center;">
                                 <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer; color: var(--text-muted); font-size: 0.68rem;">
                                     <input type="checkbox" id="chk-autoscroll" checked> AUTO-SCROLL
@@ -954,25 +1000,73 @@
                     </div>
                 </div>
 
-                <!-- TAB 2: COMPLETED TRADES TABLE -->
+                <!-- TAB 2: COMPLETED TRADES TABLE (PERSISTENT JSON) -->
                 <div id="tab-content-trades" style="display: none;">
+                    <div class="table-topbar mono">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.7rem;">
+                            <span class="pos-badge pos-badge-flat" style="border-color: rgba(240,185,11,0.4); color: var(--binance-gold); background: rgba(240,185,11,0.08);">PERSISTENT JSON</span>
+                            <span style="color: var(--text-muted); font-size: 0.68rem;">trades_history.json</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.4rem;">
+                            <a href="/api/trades/export" class="btn-topbar mono" download="vtrail_trades_history.json" title="Download data riwayat trade JSON">EXPORT JSON</a>
+                            <button type="button" class="btn-topbar btn-topbar-danger mono" onclick="deleteTradeHistory()" title="Hapus riwayat trade dari penyimpanan persisten">HAPUS / CLEAR</button>
+                        </div>
+                    </div>
                     <div class="table-responsive">
                         <table>
                             <thead>
                                 <tr>
+                                    <th>ID / ORDER</th>
                                     <th>SIDE</th>
                                     <th>ENTRY</th>
                                     <th>EXIT</th>
-                                    <th>NET PNL</th>
+                                    <th>QTY</th>
+                                    <th>NOTIONAL</th>
+                                    <th>REALIZED PNL</th>
                                     <th>ROI</th>
-                                    <th>PEAK</th>
                                     <th>REASON</th>
                                     <th>TIME</th>
                                 </tr>
                             </thead>
                             <tbody id="trades-tbody" class="mono">
                                 <tr>
-                                    <td colspan="8" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat trade.</td>
+                                    <td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat trade.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- TAB 3: BINANCE TESTNET OFFICIAL ENDPOINT (/fapi/v1/userTrades) -->
+                <div id="tab-content-binance" style="display: none;">
+                    <div class="table-topbar mono">
+                        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.7rem;">
+                            <span class="pos-badge pos-badge-flat" style="border-color: rgba(14,203,129,0.4); color: var(--color-long); background: rgba(14,203,129,0.08);">GET /fapi/v1/userTrades</span>
+                            <span id="binance-status-label" style="color: var(--text-muted); font-size: 0.68rem;">Binance Testnet Filled Trades</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.4rem;">
+                            <button type="button" class="btn-topbar mono" onclick="fetchBinanceTrades(true)" id="btn-sync-binance">SYNC DARI BINANCE</button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>TRADE ID</th>
+                                    <th>ORDER ID</th>
+                                    <th>SIDE</th>
+                                    <th>PRICE</th>
+                                    <th>QTY</th>
+                                    <th>NOTIONAL (USDT)</th>
+                                    <th>REALIZED PNL</th>
+                                    <th>FEE</th>
+                                    <th>ROLE</th>
+                                    <th>TIME</th>
+                                </tr>
+                            </thead>
+                            <tbody id="binance-trades-tbody" class="mono">
+                                <tr>
+                                    <td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Tekan 'SYNC DARI BINANCE' atau pastikan API Key testnet terpasang.</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1144,14 +1238,93 @@
 
         function switchTab(tab) {
             document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('tab-content-logs').style.display = 'none';
+            document.getElementById('tab-content-trades').style.display = 'none';
+            document.getElementById('tab-content-binance').style.display = 'none';
+
             if (tab === 'logs') {
                 document.getElementById('tab-btn-logs').classList.add('active');
                 document.getElementById('tab-content-logs').style.display = 'block';
-                document.getElementById('tab-content-trades').style.display = 'none';
-            } else {
+            } else if (tab === 'trades') {
                 document.getElementById('tab-btn-trades').classList.add('active');
-                document.getElementById('tab-content-logs').style.display = 'none';
                 document.getElementById('tab-content-trades').style.display = 'block';
+            } else if (tab === 'binance') {
+                document.getElementById('tab-btn-binance').classList.add('active');
+                document.getElementById('tab-content-binance').style.display = 'block';
+                fetchBinanceTrades();
+            }
+        }
+
+        async function deleteTradeHistory() {
+            if (!confirm('Hapus seluruh riwayat trade dari penyimpanan file JSON (trades_history.json)? Tindakan ini permanen.')) return;
+            try {
+                const res = await fetch('/api/trades/clear', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: '{}'
+                });
+                const d = await res.json();
+                if (d.success) {
+                    document.getElementById('trades-tbody').innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Riwayat trade berhasil dihapus dari file persisten.</td></tr>';
+                    document.getElementById('count-trades').innerText = '0';
+                    fetchFullState();
+                } else {
+                    alert(d.error || 'Gagal menghapus riwayat trade.');
+                }
+            } catch (err) {
+                alert('Gagal menghubungi server: ' + err);
+            }
+        }
+
+        async function fetchBinanceTrades(manual = false) {
+            const btn = document.getElementById('btn-sync-binance');
+            const lbl = document.getElementById('binance-status-label');
+            if (manual && btn) btn.innerText = 'SYNCING...';
+
+            try {
+                const sym = (currentConfig && currentConfig.symbol) ? currentConfig.symbol : 'BTCUSDT';
+                const res = await fetch(`/api/binance/trades?symbol=${sym}&limit=50`);
+                const d = await res.json();
+                if (d.success && d.trades) {
+                    document.getElementById('count-binance-trades').innerText = d.trades.length;
+                    if (lbl) lbl.innerText = `Terhubung: ${d.trades.length} trade dieksekusi`;
+
+                    if (d.trades.length === 0) {
+                        document.getElementById('binance-trades-tbody').innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat order/trade terisi di akun testnet ini.</td></tr>';
+                    } else {
+                        let html = '';
+                        d.trades.forEach(t => {
+                            const isBuy = (t.side || '').toUpperCase() === 'BUY';
+                            const sideClass = isBuy ? 'color-green' : 'color-red';
+                            const pnl = t.realized_pnl || 0;
+                            const pnlClass = pnl > 0 ? 'color-green' : (pnl < 0 ? 'color-red' : '');
+                            const notional = t.quote_qty ? t.quote_qty : (t.price * t.qty);
+
+                            html += `
+                                <tr>
+                                    <td style="color: var(--text-muted); font-size: 0.7rem;">#${t.id || '-'}</td>
+                                    <td style="color: var(--text-muted); font-size: 0.7rem;">${t.order_id || '-'}</td>
+                                    <td class="${sideClass} font-bold">${t.side}</td>
+                                    <td>${fmtPx(t.price)}</td>
+                                    <td>${t.qty ? t.qty.toFixed(4) : '-'}</td>
+                                    <td>$${notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                    <td class="${pnlClass} font-bold">${fmtUsd(pnl)}</td>
+                                    <td style="color: var(--text-dim);">${t.commission ? t.commission.toFixed(4) : '0'} ${t.commission_asset || 'USDT'}</td>
+                                    <td><span class="pos-badge pos-badge-flat" style="font-size: 0.65rem;">${t.maker ? 'MAKER' : 'TAKER'}</span></td>
+                                    <td style="color: var(--text-dim);">${t.time || '-'}</td>
+                                </tr>
+                            `;
+                        });
+                        document.getElementById('binance-trades-tbody').innerHTML = html;
+                    }
+                } else {
+                    if (lbl) lbl.innerText = d.error || 'Gagal memuat trade Binance';
+                    if (manual) alert(d.error || 'Gagal mengambil data dari Binance Testnet. Pastikan API Key valid.');
+                }
+            } catch (err) {
+                if (lbl) lbl.innerText = 'Koneksi error: ' + err;
+            } finally {
+                if (manual && btn) btn.innerText = 'SYNC DARI BINANCE';
             }
         }
 
@@ -1465,28 +1638,35 @@
                 }
             }
 
-            // 7. Completed Trades Table
+            // 7. Completed Trades Table (Persistent JSON)
             if (st.recent_trades && st.recent_trades.length > 0) {
                 document.getElementById('count-trades').innerText = st.recent_trades.length;
                 let html = '';
                 st.recent_trades.forEach(t => {
-                    const isWin = t.net_pnl >= 0;
+                    const isWin = (t.net_pnl !== undefined ? t.net_pnl : t.realized_pnl) >= 0;
+                    const pnlVal = t.net_pnl !== undefined ? t.net_pnl : t.realized_pnl;
                     const pnlClass = isWin ? 'color-green' : 'color-red';
                     const sideClass = t.side === 'LONG' ? 'color-green' : 'color-red';
+                    const notional = t.quote_qty ? t.quote_qty : (t.exit_price * (t.qty || 0));
                     html += `
                         <tr>
+                            <td style="color: var(--text-muted); font-size: 0.7rem;">#${t.id || '-'}${t.order_id ? ' <span style="color:var(--text-dim);">/' + t.order_id + '</span>' : ''}</td>
                             <td class="${sideClass} font-bold">${t.side}</td>
                             <td>${fmtPx(t.entry_price)}</td>
                             <td>${fmtPx(t.exit_price)}</td>
-                            <td class="${pnlClass} font-bold">${fmtUsd(t.net_pnl)}</td>
-                            <td class="${pnlClass}">${(t.roi_pct >= 0 ? '+' : '') + t.roi_pct.toFixed(2)}%</td>
-                            <td>+${t.peak_pct ? t.peak_pct.toFixed(2) : '0.00'}%</td>
+                            <td>${t.qty ? t.qty.toFixed(4) : '-'}</td>
+                            <td>$${notional.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                            <td class="${pnlClass} font-bold">${fmtUsd(pnlVal)}</td>
+                            <td class="${pnlClass}">${(t.roi_pct >= 0 ? '+' : '') + (t.roi_pct || 0).toFixed(2)}%</td>
                             <td><span class="pos-badge pos-badge-flat" style="font-size: 0.65rem;">${t.reason}</span></td>
                             <td class="mono" style="color: var(--text-dim);">${t.exit_time || '-'}</td>
                         </tr>
                     `;
                 });
                 document.getElementById('trades-tbody').innerHTML = html;
+            } else {
+                document.getElementById('count-trades').innerText = '0';
+                document.getElementById('trades-tbody').innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat trade tersimpan di trades_history.json.</td></tr>';
             }
         }
 

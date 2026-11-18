@@ -1,6 +1,10 @@
+import json
+import os
 import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+
+TRADES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "trades_history.json")
 
 
 class FuturesStrategyEngine:
@@ -62,6 +66,7 @@ class FuturesStrategyEngine:
         self.trade_id_counter = 0
         self.trade_history: List[Dict[str, Any]] = []
         self.event_logs: List[Dict[str, Any]] = []
+        self.load_trades_from_file()
 
         # Kontrol Start / Stop Bot (Default: False / STOPPED sampai user menekan Start)
         self.is_bot_active = False
@@ -70,6 +75,33 @@ class FuturesStrategyEngine:
             "STATUS",
             f"Bot SIAGA (STOPPED) untuk {self.symbol}. Tekan tombol 'START BOT' untuk memulai pemindaian sinyal.",
         )
+
+    def load_trades_from_file(self):
+        """Memuat riwayat trade dari file JSON persisten agar tidak hilang saat restart."""
+        try:
+            if os.path.exists(TRADES_FILE):
+                with open(TRADES_FILE, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        self.trade_history = data
+                        if self.trade_history:
+                            self.trade_id_counter = max((int(t.get("id", 0)) for t in self.trade_history), default=0)
+        except Exception as e:
+            print(f"[WARN] Gagal memuat {TRADES_FILE}: {e}")
+
+    def save_trades_to_file(self):
+        """Menyimpan riwayat trade ke file JSON persisten."""
+        try:
+            with open(TRADES_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.trade_history, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            print(f"[ERR] Gagal menyimpan {TRADES_FILE}: {e}")
+
+    def clear_trade_history(self):
+        """Menghapus seluruh riwayat trade dari memori dan file JSON persisten."""
+        self.trade_history.clear()
+        self.save_trades_to_file()
+        self.log("STATUS", "Riwayat trade berhasil dihapus dari penyimpanan file JSON.")
 
     def log(self, category: str, text: str):
         now = datetime.now().strftime("%H:%M:%S")
@@ -181,21 +213,31 @@ class FuturesStrategyEngine:
             lost_balance = self.wallet_balance
             self.wallet_balance = 0.0
             side_str = "LONG" if self.pos_side == 1 else "SHORT"
+            now_dt = datetime.now()
+            now_ms = int(time.time() * 1000)
 
-            self.trade_history.insert(
-                0,
-                {
-                    "id": self.trade_id_counter,
-                    "side": side_str,
-                    "entry_price": self.pos_entry_price,
-                    "exit_price": worst_price,
-                    "net_pnl": -lost_balance,
-                    "roi_pct": -100.0,
-                    "peak_pct": 0.0,
-                    "reason": "LIQUIDATED (Margin Call)",
-                    "exit_time": datetime.now().strftime("%H:%M:%S"),
-                },
-            )
+            trade_record = {
+                "id": self.trade_id_counter,
+                "order_id": int(now_ms / 1000) + self.trade_id_counter,
+                "symbol": self.symbol,
+                "side": side_str,
+                "entry_price": round(self.pos_entry_price, 2),
+                "exit_price": round(worst_price, 2),
+                "qty": round(self.pos_qty, 4),
+                "quote_qty": round(self.pos_qty * worst_price, 2),
+                "commission": 0.0,
+                "commission_asset": "USDT",
+                "realized_pnl": round(-lost_balance, 2),
+                "net_pnl": round(-lost_balance, 2),
+                "roi_pct": -100.0,
+                "peak_pct": 0.0,
+                "reason": "LIQUIDATED (Margin Call)",
+                "exit_time": now_dt.strftime("%H:%M:%S"),
+                "exit_date": now_dt.strftime("%Y-%m-%d"),
+                "time_ms": now_ms,
+            }
+            self.trade_history.insert(0, trade_record)
+            self.save_trades_to_file()
             self.pos_side = 0
             self.log("LIQUIDATED", f"LIQUIDATED (Margin Call) pada harga {worst_price:,.2f}. Saldo habis ($0.00).")
 
@@ -273,22 +315,31 @@ class FuturesStrategyEngine:
             roi_pct = (net_pnl / self.pos_margin_used) * 100.0 if self.pos_margin_used > 0 else 0.0
 
             side_str = "LONG" if self.pos_side == 1 else "SHORT"
-            self.trade_history.insert(
-                0,
-                {
-                    "id": self.trade_id_counter,
-                    "side": side_str,
-                    "entry_price": self.pos_entry_price,
-                    "exit_price": exit_price,
-                    "net_pnl": net_pnl,
-                    "roi_pct": roi_pct,
-                    "peak_pct": peak_pct,
-                    "reason": exit_reason,
-                    "exit_time": datetime.now().strftime("%H:%M:%S"),
-                },
-            )
-            if len(self.trade_history) > 100:
-                self.trade_history.pop()
+            now_dt = datetime.now()
+            now_ms = int(time.time() * 1000)
+
+            trade_record = {
+                "id": self.trade_id_counter,
+                "order_id": int(now_ms / 1000) + self.trade_id_counter,
+                "symbol": self.symbol,
+                "side": side_str,
+                "entry_price": round(self.pos_entry_price, 2),
+                "exit_price": round(exit_price, 2),
+                "qty": round(self.pos_qty, 4),
+                "quote_qty": round(self.pos_qty * exit_price, 2),
+                "commission": round(taker_fee, 4),
+                "commission_asset": "USDT",
+                "realized_pnl": round(net_pnl, 2),
+                "net_pnl": round(net_pnl, 2),
+                "roi_pct": round(roi_pct, 2),
+                "peak_pct": round(peak_pct, 2),
+                "reason": exit_reason,
+                "exit_time": now_dt.strftime("%H:%M:%S"),
+                "exit_date": now_dt.strftime("%Y-%m-%d"),
+                "time_ms": now_ms,
+            }
+            self.trade_history.insert(0, trade_record)
+            self.save_trades_to_file()
 
             pnl_sign = "+" if net_pnl >= 0 else "-"
             pnl_str = f"{pnl_sign}${abs(net_pnl):,.2f}"
@@ -462,6 +513,6 @@ class FuturesStrategyEngine:
                 "taker_fee_pct": self.taker_fee_pct * 100.0,
                 "mmr_pct": self.mmr_pct * 100.0,
             },
-            "recent_trades": self.trade_history[:15],
+            "recent_trades": self.trade_history[:50],
             "recent_logs": self.event_logs[:25],
         }
