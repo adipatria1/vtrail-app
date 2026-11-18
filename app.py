@@ -47,7 +47,7 @@ class AppManager:
             "symbol": "BTCUSDT",
             "timeframe": DEFAULT_TIMEFRAME,
             "line_mode": DEFAULT_LINE_MODE,
-            "vol_type": "Stdev",  # Sesuai vtrail.txt
+            "vol_type": "Atr",  # Sesuai default vstep1.py (Atr)
             "vol_len": DEFAULT_LOOKBACK,
             "vol_mult": DEFAULT_MULTIPLIER,
             "leverage": 15.0,
@@ -145,6 +145,87 @@ class AppManager:
             self.testnet_connected = False
             return False, res.get("error", "Gagal koneksi Testnet.")
 
+    def warmup_sync(self, limit: int = 1500) -> bool:
+        """
+        Melakukan warm-up 1500 klines secara sinkron langsung saat bot di-start,
+        sehingga kondisi S/R, level Wilder RMA, dan step direction 100% presisi identik dengan TradingView & vstep1.py.
+        """
+        import requests
+        try:
+            sym = self.config["symbol"].upper()
+            interval = self.config["timeframe"]
+            interval_ms = INTERVAL_MS_MAP.get(interval, 60_000)
+
+            # Buat VolStepEngine fresh sesuai konfigurasi terbaru (Atr/Stdev, Lookback, Mult, LineMode)
+            self.vol_engine = VolStepEngine(
+                symbol=sym,
+                line_mode=self.config["line_mode"],
+                vol_type=self.config["vol_type"],
+                length=int(self.config["vol_len"]),
+                vol_mult=float(self.config["vol_mult"]),
+            )
+            self.vol_engine.on_candle_close = self._handle_candle_close
+            self.vol_engine.on_live_tick = self._handle_live_tick
+
+            # Tarik 1500 klines historis resmi dari Binance Futures
+            url = "https://fapi.binance.com/fapi/v1/klines"
+            params = {"symbol": sym, "interval": interval, "limit": min(limit, 1500)}
+            r = requests.get(url, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            if r.status_code == 200:
+                klines = r.json()
+                now_ms = get_binance_now_ms()
+
+                for k in klines[:-1]:
+                    self.vol_engine.process_closed_candle(
+                        open_p=float(k[1]),
+                        high_p=float(k[2]),
+                        low_p=float(k[3]),
+                        close_p=float(k[4]),
+                        raw_close_str=str(k[4]),
+                        open_time=int(k[0]),
+                        close_time=int(k[6]),
+                        interval_ms=interval_ms,
+                    )
+                if klines:
+                    last_k = klines[-1]
+                    close_t = int(last_k[6])
+                    if close_t <= now_ms:
+                        self.vol_engine.process_closed_candle(
+                            open_p=float(last_k[1]),
+                            high_p=float(last_k[2]),
+                            low_p=float(last_k[3]),
+                            close_p=float(last_k[4]),
+                            raw_close_str=str(last_k[4]),
+                            open_time=int(last_k[0]),
+                            close_time=close_t,
+                            interval_ms=interval_ms,
+                        )
+                    else:
+                        self.vol_engine.update_live_tick(
+                            price=float(last_k[4]),
+                            high_p=float(last_k[2]),
+                            low_p=float(last_k[3]),
+                            open_p=float(last_k[1]),
+                            open_time=int(last_k[0]),
+                            close_time=close_t,
+                            raw_price_str=str(last_k[4]),
+                            interval_ms=interval_ms,
+                        )
+                logger.info(f"[WARMUP START BOT] {len(klines)} klines berhasil dimuat untuk {sym}. S/R: {self.vol_engine.confirmed_sr} (Trend: {self.vol_engine.cur_dir})")
+                if self.strat_engine:
+                    trend_txt = f"{self.vol_engine.cur_dir or 'FLAT'} ({self.vol_engine.cur_pct:+.2f}%)" if self.vol_engine.cur_pct is not None else "FLAT"
+                    self.strat_engine.log(
+                        "WARMUP",
+                        f"Warm-up {len(klines)} klines selesai saat Start Bot. S/R: {self.vol_engine.fmt(self.vol_engine.confirmed_sr)} | Step: {trend_txt}"
+                    )
+                return True
+            else:
+                logger.warning(f"Gagal warmup_sync: HTTP {r.status_code}")
+                return False
+        except Exception as e:
+            logger.error(f"Gagal warmup_sync pada start bot: {e}")
+            return False
+
     def _handle_candle_close(
         self,
         engine: VolStepEngine,
@@ -222,8 +303,8 @@ async def async_worker_routine():
                 except Exception as e:
                     logger.warning(f"Gagal sync server time: {e}")
 
-                # Tarik klines
-                params = {"symbol": sym.upper(), "interval": interval, "limit": 1000}
+                # Tarik 1500 klines (persis vstep1.py)
+                params = {"symbol": sym.upper(), "interval": interval, "limit": 1500}
                 async with session.get("https://fapi.binance.com/fapi/v1/klines", params=params, timeout=10) as resp:
                     if resp.status == 200:
                         klines = await resp.json()
@@ -663,7 +744,7 @@ def manage_binance_leverage():
 
 @app.route("/api/bot/toggle", methods=["POST"])
 def toggle_bot():
-    """Start / Stop bot trading logic."""
+    """Start / Stop bot trading logic dengan auto warm-up 1500 klines."""
     data = request.get_json() or {}
     with manager.lock:
         if not manager.strat_engine:
@@ -673,27 +754,42 @@ def toggle_bot():
         target = not current if "active" not in data else bool(data["active"])
 
         if target:
-            # Pastikan API Key Testnet valid dan terkoneksi
-            ok, bal_or_err = manager.sync_testnet_balance()
-            if not ok:
-                return jsonify({
-                    "success": False,
-                    "error": f"{bal_or_err}. Masukkan API Key & Secret Binance Testnet pada menu Setup terlebih dahulu!"
-                })
+            # 1. Warm-up 1500 klines fresh saat bot di-start agar S/R 100% presisi identik TradingView & vstep1.py
+            manager.warmup_sync(limit=1500)
+
+            # 2. Cek dan sync saldo testnet jika kunci API tersedia
+            has_keys = bool(manager.config.get("api_key") and manager.config.get("api_secret"))
+            if has_keys:
+                ok, bal_or_err = manager.sync_testnet_balance()
+                if not ok:
+                    return jsonify({
+                        "success": False,
+                        "error": f"{bal_or_err}. Masukkan API Key & Secret Binance Testnet pada menu Setup terlebih dahulu!"
+                    })
+                bal_msg = f"Saldo Binance Testnet: ${manager.testnet_balance:,.2f} USDT"
+            else:
+                bal_msg = f"Mode Simulasi Virtual: ${manager.strat_engine.wallet_balance:,.2f} USDT"
 
             manager.strat_engine.set_bot_active(True)
+            sr_str = manager.vol_engine.fmt(manager.vol_engine.confirmed_sr) if manager.vol_engine else "-"
+            dir_str = manager.vol_engine.cur_dir or "FLAT"
+            pct_val = f"{manager.vol_engine.cur_pct:+.2f}%" if (manager.vol_engine and manager.vol_engine.cur_pct is not None) else "0.00%"
+
             return jsonify({
                 "success": True,
                 "is_bot_active": True,
-                "balance": manager.testnet_balance,
-                "message": f"Bot Aktif! Saldo Binance Testnet: ${manager.testnet_balance:,.2f} USDT"
+                "balance": manager.testnet_balance if has_keys else manager.strat_engine.wallet_balance,
+                "confirmed_sr": sr_str,
+                "cur_dir": dir_str,
+                "cur_pct": pct_val,
+                "message": f"Bot BERJALAN & 1500 Klines Terkalibrasi! S/R: {sr_str} ({dir_str} {pct_val}). {bal_msg}"
             })
         else:
             manager.strat_engine.set_bot_active(False)
             return jsonify({
                 "success": True,
                 "is_bot_active": False,
-                "message": "Bot Dihentikan (STOPPED)."
+                "message": "Bot Dihentikan (STANDBY)."
             })
 
 

@@ -955,8 +955,8 @@
                     <div class="form-group">
                         <label>VOLATILITY TYPE</label>
                         <select id="cfg-vol-type" class="form-control mono">
+                            <option value="Atr" selected>Atr (Average True Range - Default vstep1)</option>
                             <option value="Stdev">Stdev (Standard Deviation)</option>
-                            <option value="Atr">Atr (Average True Range)</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -1028,7 +1028,7 @@
             symbol: 'BTCUSDT',
             timeframe: '1m',
             line_mode: 'Anchor',
-            vol_type: 'Stdev',
+            vol_type: 'Atr',
             vol_len: 200,
             vol_mult: 4.0,
             leverage: 15,
@@ -1057,17 +1057,23 @@
         }
         loadSavedConfig();
 
-        // S/R Engine State
+        // S/R Engine State (Persis 100% vstep1.py & Pine Script RMA)
         let confirmedSr = null;
         let prevConfirmedSr = null;
         let srDirection = 0;
+        let curPct = null;
+        let curDir = null;
         let nextSrActive = false;
         let nextSrDir = null;
         let nextSrPrice = null;
         let nextSrPct = null;
-        let closesHistory = [];
-        let trHistory = [];
+        let closedCloses = [];
+        let trWarmup = [];
+        let confirmedRma = null;
+        let closedBarsCount = 0;
+        let prevClosedClose = null;
         let lastClosedCandleTime = 0;
+        let restPollTimer = null;
 
         // Strategy Engine State
         let walletBalance = 0.0;
@@ -1219,10 +1225,16 @@
             document.getElementById('logs-container').innerHTML = '<div class="log-entry"><span class="log-time">' + new Date().toLocaleTimeString() + '</span><span class="log-cat log-cat-INFO">[CLEAR]</span><span>Log console dibersihkan.<span class="cursor-blink"></span></span></div>';
         }
 
-        function toggleBot() {
+        async function toggleBot() {
             isBotActive = !isBotActive;
             updateBotUI(isBotActive);
-            logEvent('STATUS', isBotActive ? 'Bot BERJALAN (ACTIVE). Memindai sinyal S/R...' : 'Bot DIHENTIKAN (STANDBY). Pemindaian dinonaktifkan.');
+            if (isBotActive) {
+                logEvent('STATUS', 'Bot BERJALAN (ACTIVE). Memulai re-warmup 1500 klines agar S/R 100% presisi...');
+                await startEngine(true);
+                logEvent('STATUS', 'Pindaian sinyal S/R diaktifkan.');
+            } else {
+                logEvent('STATUS', 'Bot DIHENTIKAN (STANDBY). Pemindaian dinonaktifkan.');
+            }
         }
 
         function updateBotUI(active) {
@@ -1420,58 +1432,64 @@
         }
 
         // =========================================================================
-        // MATHEMATICAL S/R CALCULATIONS (PINE SCRIPT v6 PARITY)
+        // MATHEMATICAL S/R CALCULATIONS (PERSIS 100% vstep1.py & PINE SCRIPT v6)
         // =========================================================================
-        function calcStdev(values) {
-            if (values.length < 2) return 0;
+        function calcStdevManual(values) {
             const n = values.length;
+            if (n === 0) return null;
             const mean = values.reduce((a, b) => a + b, 0) / n;
-            const variance = values.reduce((acc, x) => acc + Math.pow(x - mean, 2), 0) / (n - 1);
-            return Math.sqrt(Math.max(0, variance));
+            const variance = values.reduce((acc, x) => acc + Math.pow(x - mean, 2), 0) / n;
+            return Math.sqrt(variance);
         }
 
-        function computeVolatility(high, low, close) {
-            if (cfg.vol_type === 'Stdev') {
-                const sub = closesHistory.slice(-cfg.vol_len);
-                return calcStdev(sub) * cfg.vol_mult;
+        function computeVolatilityClosed(high, low, close) {
+            const prevClose = prevClosedClose !== null ? prevClosedClose : close;
+            const tr = Math.max(high - low, Math.abs(high - prevClose), Math.abs(low - prevClose));
+            prevClosedClose = close;
+            closedCloses.push(close);
+            if (closedCloses.length > cfg.vol_len) closedCloses.shift();
+            closedBarsCount++;
+
+            // Wilder's RMA (Running Moving Average) persis ta.atr() TradingView & vstep1.py
+            if (closedBarsCount < cfg.vol_len) {
+                trWarmup.push(tr);
+                confirmedRma = null;
+            } else if (closedBarsCount === cfg.vol_len) {
+                trWarmup.push(tr);
+                confirmedRma = trWarmup.reduce((a, b) => a + b, 0) / cfg.vol_len;
             } else {
-                // ATR
-                if (trHistory.length === 0) return (high - low) * cfg.vol_mult;
-                const sub = trHistory.slice(-cfg.vol_len);
-                const atr = sub.reduce((a, b) => a + b, 0) / sub.length;
-                return atr * cfg.vol_mult;
+                confirmedRma = (tr + (cfg.vol_len - 1) * confirmedRma) / cfg.vol_len;
             }
+
+            if (closedBarsCount < cfg.vol_len) return null;
+
+            const rawVol = cfg.vol_type === 'Stdev' ? calcStdevManual(closedCloses) : confirmedRma;
+            return rawVol !== null ? rawVol * cfg.vol_mult : null;
         }
 
         function processClosedCandle(openP, highP, lowP, closeP, candleTime) {
-            closesHistory.push(closeP);
-            const prevClose = closesHistory.length >= 2 ? closesHistory[closesHistory.length - 2] : closeP;
-            const tr = Math.max(highP - lowP, Math.abs(highP - prevClose), Math.abs(lowP - prevClose));
-            trHistory.push(tr);
-            if (closesHistory.length > 1200) closesHistory.shift();
-            if (trHistory.length > 1200) trHistory.shift();
-
             if (confirmedSr === null) {
                 confirmedSr = closeP;
-                prevConfirmedSr = closeP;
-                srDirection = 0;
-                return;
             }
 
-            const volValue = computeVolatility(highP, lowP, closeP);
-            const diff = Math.abs(closeP - confirmedSr);
-            const isStep = diff > volValue;
+            const volValue = computeVolatilityClosed(highP, lowP, closeP);
+            let isStep = false;
             let stepDir = 0;
 
-            if (isStep) {
-                stepDir = closeP > confirmedSr ? 1 : -1;
-                prevConfirmedSr = confirmedSr;
-                if (cfg.line_mode === 'Anchor') {
-                    confirmedSr = closeP;
-                } else {
-                    confirmedSr = confirmedSr + (stepDir * volValue);
+            if (volValue !== null) {
+                let stepLevel = cfg.line_mode === 'Anchor' ? closeP : confirmedSr + (closeP > confirmedSr ? 1 : -1) * volValue;
+                if (Math.abs(closeP - confirmedSr) > volValue) {
+                    const newLevel = stepLevel;
+                    isStep = true;
+                    stepDir = newLevel > confirmedSr ? 1 : -1;
+                    if (confirmedSr !== null && confirmedSr !== 0) {
+                        curPct = ((newLevel - confirmedSr) / confirmedSr) * 100.0;
+                        curDir = curPct >= 0 ? 'LONG' : 'SHORT';
+                    }
+                    prevConfirmedSr = confirmedSr;
+                    confirmedSr = newLevel;
+                    srDirection = stepDir;
                 }
-                srDirection = stepDir;
             }
 
             // Strategy Candle Close Hook
@@ -1484,13 +1502,18 @@
             const srDirEl = document.getElementById('stat-sr-dir-badge');
             const srPctEl = document.getElementById('stat-sr-pct');
 
-            if (confirmedSr && currentPrice) {
-                const pct = ((currentPrice - confirmedSr) / confirmedSr) * 100.0;
-                const isLong = pct >= 0;
+            if (curPct !== null && curPct !== undefined) {
+                const isLong = curPct >= 0;
                 srDirEl.innerText = isLong ? 'BULL STEP' : 'BEAR STEP';
                 srDirEl.className = 'pos-badge ' + (isLong ? 'pos-badge-long' : 'pos-badge-short');
-                srPctEl.innerText = (isLong ? '+' : '') + pct.toFixed(2) + '%';
+                srPctEl.innerText = (isLong ? '+' : '') + curPct.toFixed(2) + '%';
                 srPctEl.className = 'font-bold ' + (isLong ? 'color-green' : 'color-red');
+            } else {
+                srDirEl.innerText = 'FLAT';
+                srDirEl.className = 'pos-badge pos-badge-flat';
+                srPctEl.innerText = '0.00%';
+                srPctEl.className = 'font-bold';
+            }
             }
         }
 
@@ -1854,22 +1877,28 @@
         }
 
         // =========================================================================
-        // BINANCE REAL-TIME WEBSOCKET & WARMUP
+        // BINANCE REAL-TIME WEBSOCKET, REST POLLING & 1500-KLINES WARMUP
         // =========================================================================
-        async function startEngine() {
+        async function startEngine(force = false) {
             document.getElementById('stat-symbol-tf').innerText = `${cfg.symbol} ${cfg.timeframe}`;
-            logEvent('INFO', `Memulai warm-up 1000 klines untuk ${cfg.symbol} (${cfg.timeframe})...`);
+            logEvent('INFO', `Memulai warm-up 1500 klines untuk ${cfg.symbol} (${cfg.timeframe})...`);
 
             try {
-                // Fetch 1000 historical klines directly from Binance Public REST
-                const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${cfg.symbol}&interval=${cfg.timeframe}&limit=1000`;
+                // Tarik 1500 klines historis resmi dari Binance Futures (persis vstep1.py)
+                const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${cfg.symbol}&interval=${cfg.timeframe}&limit=1500`;
                 const resp = await fetch(url);
                 const klines = await resp.json();
 
-                if (Array.isArray(klines)) {
-                    closesHistory = [];
-                    trHistory = [];
+                if (Array.isArray(klines) && klines.length > 0) {
+                    closedCloses = [];
+                    trWarmup = [];
+                    confirmedRma = null;
+                    closedBarsCount = 0;
+                    prevClosedClose = null;
                     confirmedSr = null;
+                    prevConfirmedSr = null;
+                    curPct = null;
+                    curDir = null;
 
                     klines.forEach(k => {
                         const o = parseFloat(k[1]);
@@ -1881,19 +1910,71 @@
                         processClosedCandle(o, h, l, c, t);
                     });
 
-                    logEvent('INFO', `Warm-up selesai: ${klines.length} klines diproses. S/R dikonfirmasi: ${fmtPx(confirmedSr)}`);
+                    // Langsung set harga live dari candle terakhir agar tidak macet di CONNECTING...
+                    const lastK = klines[klines.length - 1];
+                    const lastPx = parseFloat(lastK[4]);
+                    lastPrice = lastPx;
+                    document.getElementById('stat-live-price').innerText = fmtPx(lastPx);
+                    document.getElementById('stat-tick-delta').innerText = 'LIVE SYNC (1500 BARS)';
+                    document.getElementById('stat-tick-delta').style.color = 'var(--binance-gold)';
+
+                    const trendTxt = curDir ? `${curDir} (${(curPct || 0).toFixed(2)}%)` : 'FLAT';
+                    logEvent('INFO', `Warm-up selesai: ${klines.length} klines diproses. S/R: ${fmtPx(confirmedSr)} [${trendTxt}]`);
                 }
             } catch (err) {
-                logEvent('INFO', `Warm-up error: ${err.message}. Mencoba langsung koneksi WebSocket...`);
+                logEvent('INFO', `Warm-up error: ${err.message}. Mencoba koneksi langsung...`);
             }
 
-            // Connect to Binance Futures Live WebSocket
+            // Hubungkan WebSocket stream
             connectWebSocket();
 
-            // Check Testnet Balance if keys present
+            // Jalankan REST polling fallback setiap 1 detik agar harga selalu jalan & tidak macet CONNECTING
+            startRestPolling();
+
+            // Cek saldo testnet jika API key ada
             if (cfg.api_key && cfg.api_secret) {
                 verifyTestnetKey();
             }
+        }
+
+        function startRestPolling() {
+            if (restPollTimer) clearInterval(restPollTimer);
+            restPollTimer = setInterval(async () => {
+                try {
+                    const r = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${cfg.symbol}`);
+                    const d = await r.json();
+                    if (d && d.price) {
+                        const px = parseFloat(d.price);
+                        const priceEl = document.getElementById('stat-live-price');
+                        const deltaEl = document.getElementById('stat-tick-delta');
+                        const priceCard = document.getElementById('card-price-container');
+
+                        priceEl.innerText = fmtPx(px);
+                        if (lastPrice !== null) {
+                            if (px > lastPrice) {
+                                deltaEl.innerText = '▲ UP TICK';
+                                deltaEl.style.color = 'var(--color-long)';
+                                priceCard.classList.remove('tick-flash-down');
+                                priceCard.classList.add('tick-flash-up');
+                            } else if (px < lastPrice) {
+                                deltaEl.innerText = '▼ DOWN TICK';
+                                deltaEl.style.color = 'var(--color-short)';
+                                priceCard.classList.remove('tick-flash-up');
+                                priceCard.classList.add('tick-flash-down');
+                            }
+                        } else {
+                            deltaEl.innerText = 'LIVE SYNC';
+                            deltaEl.style.color = 'var(--binance-gold)';
+                        }
+                        lastPrice = px;
+                        totalTicks++;
+                        document.getElementById('stat-total-ticks').innerText = totalTicks.toLocaleString();
+                        document.getElementById('badge-server-time').innerText = new Date().toLocaleTimeString();
+
+                        onStrategyLiveTick(px, px, px);
+                    }
+                } catch (e) {}
+            }, 1000);
         }
 
         function connectWebSocket() {
@@ -1905,56 +1986,81 @@
             const wsUrl = `wss://fstream.binance.com/ws/${streamName}`;
             logEvent('INFO', `Menghubungkan ke Binance WebSocket: ${streamName}...`);
 
-            ws = new WebSocket(wsUrl);
+            try {
+                ws = new WebSocket(wsUrl);
 
-            ws.onopen = function() {
-                logEvent('INFO', `WebSocket TERHUBUNG ke Binance. Stream tick aktif.`);
-            };
-
-            ws.onmessage = function(e) {
-                try {
-                    const msg = JSON.parse(e.data);
-                    if (!msg.k) return;
-                    const k = msg.k;
-                    const price = parseFloat(k.c);
-                    const highP = parseFloat(k.h);
-                    const lowP = parseFloat(k.l);
-                    const openP = parseFloat(k.o);
-                    const isClosed = k.x;
-                    const closeTimeMs = parseInt(k.T);
-
-                    expectedBarCloseMs = closeTimeMs;
-                    totalTicks++;
-                    document.getElementById('stat-total-ticks').innerText = totalTicks.toLocaleString();
-                    document.getElementById('badge-server-time').innerText = new Date().toLocaleTimeString();
-
-                    // Price Flash Strobe
-                    const priceEl = document.getElementById('stat-live-price');
+                ws.onopen = function() {
+                    logEvent('INFO', `WebSocket TERHUBUNG ke Binance. Stream tick aktif.`);
                     const deltaEl = document.getElementById('stat-tick-delta');
-                    const priceCard = document.getElementById('card-price-container');
-                    priceEl.innerText = fmtPx(price);
-
-                    if (lastPrice !== null) {
-                        if (price > lastPrice) {
-                            deltaEl.innerText = '▲ UP TICK';
-                            deltaEl.style.color = 'var(--color-long)';
-                            priceCard.classList.remove('tick-flash-down');
-                            priceCard.classList.add('tick-flash-up');
-                        } else if (price < lastPrice) {
-                            deltaEl.innerText = '▼ DOWN TICK';
-                            deltaEl.style.color = 'var(--color-short)';
-                            priceCard.classList.remove('tick-flash-up');
-                            priceCard.classList.add('tick-flash-down');
-                        }
+                    if (deltaEl && deltaEl.innerText === 'CONNECTING...') {
+                        deltaEl.innerText = 'LIVE SYNC';
+                        deltaEl.style.color = 'var(--binance-gold)';
                     }
-                    lastPrice = price;
+                };
 
-                    // Tick hook for strategy
-                    onStrategyLiveTick(price, highP, lowP);
+                ws.onmessage = function(e) {
+                    try {
+                        const msg = JSON.parse(e.data);
+                        if (!msg.k) return;
+                        const k = msg.k;
+                        const price = parseFloat(k.c);
+                        const highP = parseFloat(k.h);
+                        const lowP = parseFloat(k.l);
+                        const openP = parseFloat(k.o);
+                        const isClosed = k.x;
+                        const closeTimeMs = parseInt(k.T);
 
-                    // Candle closed hook
-                    if (isClosed && k.t !== lastClosedCandleTime) {
-                        lastClosedCandleTime = k.t;
+                        expectedBarCloseMs = closeTimeMs;
+                        totalTicks++;
+                        document.getElementById('stat-total-ticks').innerText = totalTicks.toLocaleString();
+                        document.getElementById('badge-server-time').innerText = new Date().toLocaleTimeString();
+
+                        // Price Flash Strobe
+                        const priceEl = document.getElementById('stat-live-price');
+                        const deltaEl = document.getElementById('stat-tick-delta');
+                        const priceCard = document.getElementById('card-price-container');
+                        priceEl.innerText = fmtPx(price);
+
+                        if (lastPrice !== null) {
+                            if (price > lastPrice) {
+                                deltaEl.innerText = '▲ UP TICK';
+                                deltaEl.style.color = 'var(--color-long)';
+                                priceCard.classList.remove('tick-flash-down');
+                                priceCard.classList.add('tick-flash-up');
+                            } else if (price < lastPrice) {
+                                deltaEl.innerText = '▼ DOWN TICK';
+                                deltaEl.style.color = 'var(--color-short)';
+                                priceCard.classList.remove('tick-flash-up');
+                                priceCard.classList.add('tick-flash-down');
+                            }
+                        }
+                        lastPrice = price;
+
+                        // Tick hook for strategy
+                        onStrategyLiveTick(price, highP, lowP);
+
+                        // Candle closed hook
+                        if (isClosed && k.t !== lastClosedCandleTime) {
+                            lastClosedCandleTime = k.t;
+                            processClosedCandle(openP, highP, lowP, price, k.t);
+                        }
+                    } catch (err) {
+                        console.error('WS parse error:', err);
+                    }
+                };
+
+                ws.onerror = function(err) {
+                    console.error('WS Error:', err);
+                };
+
+                ws.onclose = function() {
+                    logEvent('INFO', 'Koneksi WebSocket terputus. Mencoba rekoneksi dalam 3 detik...');
+                    setTimeout(connectWebSocket, 3000);
+                };
+            } catch (err) {
+                console.error('WS init error:', err);
+            }
+        }
                         processClosedCandle(openP, highP, lowP, price, k.t);
                     }
                 } catch (err) {

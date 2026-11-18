@@ -1151,8 +1151,8 @@
                     <div class="form-group">
                         <label>VOLATILITY TYPE</label>
                         <select id="cfg-vol-type" class="form-control mono">
+                            <option value="Atr" selected>Atr (Average True Range - Default vstep1)</option>
                             <option value="Stdev">Stdev (Standard Deviation)</option>
-                            <option value="Atr">Atr (Average True Range)</option>
                         </select>
                     </div>
                     <div class="form-group">
@@ -1410,7 +1410,7 @@
             document.getElementById('cfg-symbol').value = cfg.symbol || 'BTCUSDT';
             document.getElementById('cfg-timeframe').value = cfg.timeframe || '1m';
             document.getElementById('cfg-line-mode').value = cfg.line_mode || 'Anchor';
-            document.getElementById('cfg-vol-type').value = cfg.vol_type || 'Stdev';
+            document.getElementById('cfg-vol-type').value = cfg.vol_type || 'Atr';
             document.getElementById('cfg-vol-len').value = cfg.vol_len || 200;
             document.getElementById('cfg-vol-mult').value = cfg.vol_mult || 4.0;
             document.getElementById('cfg-leverage').value = cfg.leverage || 15;
