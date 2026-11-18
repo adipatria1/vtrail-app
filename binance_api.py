@@ -191,3 +191,94 @@ class BinanceFuturesClient:
         except Exception as e:
             return {"success": False, "error": f"Koneksi gagal: {str(e)}", "orders": []}
 
+    def set_leverage(self, symbol: str = "BTCUSDT", leverage: int = 15) -> Dict[str, Any]:
+        """
+        Mengatur leverage awal untuk simbol tertentu pada Binance Futures:
+        POST /fapi/v1/leverage
+        Parameter resmi Binance: symbol (str), leverage (int: 1-125)
+        """
+        if not self.api_key or not self.api_secret:
+            return {"success": False, "error": "API Key dan Secret Key belum diisi."}
+
+        try:
+            params = {
+                "symbol": symbol.upper().strip(),
+                "leverage": int(leverage),
+            }
+            params = self._sign(params)
+            headers = {"X-MBX-APIKEY": self.api_key}
+            url = f"{self.base_url}/fapi/v1/leverage"
+            r = requests.post(url, params=params, headers=headers, timeout=6)
+
+            if r.status_code == 200:
+                data = r.json()
+                return {
+                    "success": True,
+                    "symbol": data.get("symbol"),
+                    "leverage": data.get("leverage"),
+                    "max_notional_value": data.get("maxNotionalValue"),
+                }
+            else:
+                err_json = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+                err_msg = err_json.get("msg", r.text)
+                return {"success": False, "error": f"Binance Error ({r.status_code}): {err_msg}"}
+        except Exception as e:
+            return {"success": False, "error": f"Koneksi gagal: {str(e)}"}
+
+    def change_margin_type(self, symbol: str = "BTCUSDT", margin_type: str = "CROSSED") -> Dict[str, Any]:
+        """
+        Mengatur tipe margin (ISOLATED atau CROSSED):
+        POST /fapi/v1/marginType
+        """
+        if not self.api_key or not self.api_secret:
+            return {"success": False, "error": "API Key dan Secret Key belum diisi."}
+
+        try:
+            params = {
+                "symbol": symbol.upper().strip(),
+                "marginType": margin_type.upper().strip(),
+            }
+            params = self._sign(params)
+            headers = {"X-MBX-APIKEY": self.api_key}
+            url = f"{self.base_url}/fapi/v1/marginType"
+            r = requests.post(url, params=params, headers=headers, timeout=6)
+
+            if r.status_code == 200:
+                return {"success": True, "margin_type": margin_type}
+            else:
+                err_json = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+                err_msg = err_json.get("msg", r.text)
+                # Code -4046: No need to change margin type
+                if err_json.get("code") == -4046:
+                    return {"success": True, "margin_type": margin_type, "note": "Margin type sudah sesuai."}
+                return {"success": False, "error": f"Binance Error ({r.status_code}): {err_msg}"}
+        except Exception as e:
+            return {"success": False, "error": f"Koneksi gagal: {str(e)}"}
+
+    def get_position_risk(self, symbol: str = "BTCUSDT") -> Dict[str, Any]:
+        """
+        Mengambil informasi posisi & leverage aktif saat ini dari Binance Futures:
+        GET /fapi/v2/positionRisk
+        """
+        if not self.api_key or not self.api_secret:
+            return {"success": False, "error": "API Key dan Secret Key belum diisi."}
+
+        try:
+            params = {
+                "symbol": symbol.upper().strip(),
+            }
+            params = self._sign(params)
+            headers = {"X-MBX-APIKEY": self.api_key}
+            url = f"{self.base_url}/fapi/v2/positionRisk"
+            r = requests.get(url, params=params, headers=headers, timeout=6)
+
+            if r.status_code == 200:
+                data = r.json()
+                return {"success": True, "positions": data}
+            else:
+                err_json = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+                err_msg = err_json.get("msg", r.text)
+                return {"success": False, "error": f"Binance Error ({r.status_code}): {err_msg}"}
+        except Exception as e:
+            return {"success": False, "error": f"Koneksi gagal: {str(e)}"}
+

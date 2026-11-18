@@ -639,6 +639,28 @@ def get_binance_trades():
     return jsonify(res)
 
 
+@app.route("/api/binance/leverage", methods=["GET", "POST"])
+def manage_binance_leverage():
+    """
+    Mengambil atau mengatur leverage simbol pada akun Binance Futures:
+    POST /fapi/v1/leverage & GET /fapi/v2/positionRisk
+    """
+    with manager.lock:
+        if not manager.binance_client:
+            return jsonify({"success": False, "error": "Binance Client belum diinisialisasi."})
+
+        if request.method == "POST":
+            data = request.get_json() or {}
+            symbol = data.get("symbol") or manager.config.get("symbol", "BTCUSDT")
+            leverage = int(data.get("leverage", manager.config.get("leverage", 15)))
+            res = manager.binance_client.set_leverage(symbol=symbol, leverage=leverage)
+            return jsonify(res)
+        else:
+            symbol = request.args.get("symbol") or manager.config.get("symbol", "BTCUSDT")
+            res = manager.binance_client.get_position_risk(symbol=symbol)
+            return jsonify(res)
+
+
 @app.route("/api/bot/toggle", methods=["POST"])
 def toggle_bot():
     """Start / Stop bot trading logic."""
