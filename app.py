@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import threading
 import time
 from collections import deque
@@ -8,7 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import aiohttp
-from flask import Flask, Response, jsonify, render_template, request
+from flask import Flask, Response, jsonify, render_template, request, send_file
 from yarl import URL
 
 from binance_api import BinanceFuturesClient
@@ -680,6 +681,14 @@ def sse_stream():
                 continue
 
     return Response(event_generator(), mimetype="text/event-stream")
+
+
+@app.route("/download/apk")
+def download_apk():
+    apk_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vtrail-terminal.apk")
+    if os.path.exists(apk_path):
+        return send_file(apk_path, as_attachment=True, download_name="vtrail-terminal.apk", mimetype="application/vnd.android.package-archive")
+    return "File APK tidak ditemukan di server", 404
 
 
 # Inisialisasi awal saat modul di-load
