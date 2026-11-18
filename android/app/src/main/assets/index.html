@@ -1,0 +1,1753 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>VTrail Terminal - Standalone Binance Futures Engine</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #080a0e;
+            --bg-surface: #0f131a;
+            --bg-card: #141822;
+            --bg-card-hover: #19202c;
+            --bg-well: #0a0d13;
+            --border-dim: #1a212d;
+            --border-subtle: #242e3f;
+            --border-strong: #36445c;
+            --text-main: #f0f3f8;
+            --text-muted: #7c8ba1;
+            --text-dim: #445166;
+            --binance-gold: #f0b90b;
+            --binance-gold-hover: #d9a407;
+            --color-long: #0ecb81;
+            --color-long-bg: rgba(14, 203, 129, 0.1);
+            --color-long-border: #0ecb81;
+            --color-short: #f6465d;
+            --color-short-bg: rgba(246, 70, 93, 0.1);
+            --color-short-border: #f6465d;
+            --color-blue: #2f80ed;
+            --color-orange: #f2994a;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            min-height: 100vh;
+            line-height: 1.4;
+            overflow-x: hidden;
+            font-size: clamp(0.82rem, 1.25vw, 0.9rem);
+            letter-spacing: -0.01em;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* STOP-MOTION & STEPPED ANIMATIONS */
+        @keyframes tickStrobeUp {
+            0% { background-color: rgba(14, 203, 129, 0.35); color: #fff; }
+            50% { background-color: rgba(14, 203, 129, 0.12); }
+            100% { background-color: transparent; }
+        }
+        @keyframes tickStrobeDown {
+            0% { background-color: rgba(246, 70, 93, 0.35); color: #fff; }
+            50% { background-color: rgba(246, 70, 93, 0.12); }
+            100% { background-color: transparent; }
+        }
+        .tick-flash-up { animation: tickStrobeUp 0.3s steps(2, end); }
+        .tick-flash-down { animation: tickStrobeDown 0.3s steps(2, end); }
+
+        @keyframes steppedBlink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0; }
+        }
+        .cursor-blink {
+            display: inline-block;
+            width: 7px;
+            height: 13px;
+            background: var(--binance-gold);
+            vertical-align: middle;
+            animation: steppedBlink 1s steps(2, start) infinite;
+        }
+
+        @keyframes pilotBlink {
+            0%, 49% { opacity: 1; }
+            50%, 100% { opacity: 0.3; }
+        }
+
+        /* Top Navbar */
+        .navbar {
+            background-color: var(--bg-surface);
+            border-bottom: 1px solid var(--border-dim);
+            padding: 0.6rem clamp(0.75rem, 2vw, 1.25rem);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.65rem;
+            position: sticky;
+            top: 0;
+            z-index: 50;
+        }
+
+        .brand-section {
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+        }
+
+        .brand-logo {
+            background: #000;
+            border: 1px solid var(--binance-gold);
+            color: var(--binance-gold);
+            font-weight: 800;
+            font-size: 0.82rem;
+            padding: 0.25rem 0.55rem;
+            border-radius: 3px;
+            letter-spacing: 0.5px;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .brand-title {
+            font-size: clamp(0.9rem, 1.5vw, 1.02rem);
+            font-weight: 700;
+            color: var(--text-main);
+            letter-spacing: -0.02em;
+        }
+
+        .brand-subtitle {
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            letter-spacing: 0.4px;
+        }
+
+        @media (max-width: 640px) {
+            .brand-subtitle { display: none; }
+        }
+
+        .nav-actions {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.45rem;
+        }
+
+        /* Industrial Tactile Breaker Switch */
+        .btn-breaker {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            min-height: 44px;
+            padding: 0.45rem 1rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            cursor: pointer;
+            border: 1px solid var(--border-strong);
+            background: #121620;
+            color: var(--text-main);
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06), 0 2px 4px rgba(0, 0, 0, 0.4);
+            user-select: none;
+            transition: transform 0.05s steps(1);
+        }
+        .btn-breaker:active {
+            transform: translateY(2px);
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.6);
+        }
+        .btn-breaker.state-stopped {
+            border-color: #2e3848;
+            background: #121620;
+            color: #d8e2ef;
+        }
+        .btn-breaker.state-stopped:hover {
+            background: #181d2a;
+            border-color: var(--color-long);
+        }
+        .btn-breaker.state-running {
+            border-color: #5c1822;
+            background: #1c0e13;
+            color: #ff99a8;
+        }
+        .btn-breaker.state-running:hover {
+            background: #28121a;
+            border-color: var(--color-short);
+        }
+
+        .pilot-lamp {
+            width: 8px;
+            height: 8px;
+            border-radius: 2px;
+            background: #2a3344;
+            border: 1px solid #3d4a60;
+            display: inline-block;
+            transition: background 0.05s steps(1);
+        }
+        .pilot-lamp.lamp-green {
+            background: #0ecb81;
+            border-color: #34f5a4;
+            box-shadow: 0 0 6px #0ecb81;
+            animation: pilotBlink 1.2s steps(2, start) infinite;
+        }
+        .pilot-lamp.lamp-red {
+            background: #471820;
+            border-color: #69222c;
+        }
+
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 44px;
+            padding: 0.45rem 0.85rem;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            cursor: pointer;
+            background-color: var(--bg-well);
+            color: var(--text-main);
+            border: 1px solid var(--border-subtle);
+            user-select: none;
+            transition: transform 0.05s steps(1);
+        }
+        .btn-secondary:active { transform: translateY(2px); }
+        .btn-secondary:hover {
+            background-color: var(--bg-card);
+            border-color: var(--border-strong);
+        }
+
+        .badge-telemetry {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            min-height: 44px;
+            padding: 0.35rem 0.65rem;
+            border-radius: 4px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            background: var(--bg-well);
+            border: 1px solid var(--border-dim);
+        }
+
+        /* Container Layout */
+        .container {
+            width: 100%;
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: clamp(0.65rem, 1.8vw, 1.25rem);
+            display: flex;
+            flex-direction: column;
+            gap: clamp(0.65rem, 1.8vw, 1rem);
+        }
+
+        /* Metrics Row */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: clamp(0.5rem, 1.2vw, 0.75rem);
+        }
+
+        @media (max-width: 960px) { .metrics-grid { grid-template-columns: repeat(2, 1fr); } }
+        @media (max-width: 540px) { .metrics-grid { grid-template-columns: 1fr; } }
+
+        .metric-card {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 4px;
+            padding: clamp(0.75rem, 1.4vw, 1rem);
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-width: 0;
+            position: relative;
+        }
+
+        .metric-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 0.06em;
+        }
+
+        .metric-value {
+            font-size: clamp(1.25rem, 2.5vw, 1.6rem);
+            font-weight: 700;
+            margin: 0.25rem 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: flex;
+            align-items: baseline;
+            gap: 0.35rem;
+        }
+
+        .metric-sub {
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Workspace Grid */
+        .workspace-grid {
+            display: grid;
+            grid-template-columns: 1.05fr 0.95fr;
+            gap: clamp(0.65rem, 1.8vw, 1rem);
+        }
+
+        @media (max-width: 960px) { .workspace-grid { grid-template-columns: 1fr; } }
+
+        .card {
+            background-color: var(--bg-surface);
+            border: 1px solid var(--border-dim);
+            border-radius: 4px;
+            padding: clamp(0.75rem, 1.5vw, 1.15rem);
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            min-width: 0;
+        }
+
+        .card-header {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            border-bottom: 1px solid var(--border-dim);
+            padding-bottom: 0.55rem;
+        }
+
+        .card-title {
+            font-size: clamp(0.82rem, 1.5vw, 0.92rem);
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .pos-badge {
+            font-size: 0.7rem;
+            padding: 0.15rem 0.45rem;
+            border-radius: 2px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            white-space: nowrap;
+        }
+        .pos-badge-long { background: var(--color-long-bg); color: var(--color-long); border: 1px solid var(--color-long-border); }
+        .pos-badge-short { background: var(--color-short-bg); color: var(--color-short); border: 1px solid var(--color-short-border); }
+        .pos-badge-flat { background: var(--bg-well); color: var(--text-dim); border: 1px solid var(--border-dim); }
+        .pos-badge-pending { background: rgba(240, 185, 11, 0.12); color: var(--binance-gold); border: 1px solid var(--binance-gold); }
+
+        .pos-info-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.45rem;
+            background: var(--bg-well);
+            padding: clamp(0.6rem, 1.2vw, 0.85rem);
+            border-radius: 3px;
+            border: 1px solid var(--border-dim);
+        }
+
+        @media (max-width: 540px) { .pos-info-grid { grid-template-columns: repeat(2, 1fr); } }
+
+        .pos-item-label { font-size: 0.66rem; color: var(--text-muted); letter-spacing: 0.04em; }
+        .pos-item-val {
+            font-size: clamp(0.82rem, 1.5vw, 0.92rem);
+            font-weight: 700;
+            margin-top: 0.1rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* 24-SEGMENT HARDWARE LED VU METER */
+        .vu-meter-box {
+            background: var(--bg-well);
+            border: 1px solid var(--border-dim);
+            border-radius: 3px;
+            padding: clamp(0.65rem, 1.2vw, 0.85rem);
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+        }
+
+        .vu-meter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.72rem;
+            letter-spacing: 0.05em;
+        }
+
+        .vu-led-strip {
+            display: flex;
+            gap: 3px;
+            height: 14px;
+            background: #06080b;
+            padding: 2px 3px;
+            border: 1px solid var(--border-subtle);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+
+        .led-segment {
+            flex: 1;
+            background: #131720;
+            border-radius: 1px;
+            transition: background 0.05s steps(1);
+        }
+        .led-segment.lit-green {
+            background: #0ecb81;
+            box-shadow: 0 0 3px rgba(14, 203, 129, 0.7);
+        }
+        .led-segment.lit-amber {
+            background: #f0b90b;
+            box-shadow: 0 0 4px rgba(240, 185, 11, 0.8);
+        }
+
+        .vu-milestones {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.35rem;
+            font-size: 0.68rem;
+            color: var(--text-muted);
+            margin-top: 0.2rem;
+        }
+
+        @media (max-width: 600px) { .vu-milestones { grid-template-columns: repeat(2, 1fr); } }
+
+        .ms-box { display: flex; flex-direction: column; gap: 0.1rem; }
+        .ms-box span:first-child { color: var(--text-dim); font-size: 0.64rem; }
+        .ms-box span:last-child { font-weight: 700; color: var(--text-main); }
+
+        /* TTY QUANT CONSOLE */
+        .console-wrapper {
+            display: flex;
+            flex-direction: column;
+            background: #06080b;
+            border: 1px solid var(--border-subtle);
+            border-radius: 3px;
+            overflow: hidden;
+            height: 390px;
+        }
+
+        @media (max-width: 960px) { .console-wrapper { height: 330px; } }
+
+        .console-topbar {
+            background: #0e1218;
+            border-bottom: 1px solid var(--border-dim);
+            padding: 0.4rem 0.65rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.5rem;
+            font-size: 0.7rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+        }
+
+        .console-body {
+            flex: 1;
+            padding: 0.65rem;
+            overflow-y: auto;
+            font-size: 0.74rem;
+            line-height: 1.5;
+            -webkit-overflow-scrolling: touch;
+        }
+
+        .log-entry {
+            display: flex;
+            align-items: baseline;
+            gap: 0.45rem;
+            margin-bottom: 0.22rem;
+            border-bottom: 1px dashed rgba(255, 255, 255, 0.03);
+            padding-bottom: 0.18rem;
+        }
+
+        .log-time { color: var(--text-dim); flex-shrink: 0; font-size: 0.68rem; }
+        .log-cat {
+            font-weight: 700;
+            padding: 0 4px;
+            border-radius: 2px;
+            font-size: 0.64rem;
+            flex-shrink: 0;
+            letter-spacing: 0.04em;
+        }
+        .log-cat-FILL { background: var(--color-long-bg); color: var(--color-long); border: 1px solid var(--color-long-border); }
+        .log-cat-SIGNAL { background: rgba(47, 128, 237, 0.15); color: var(--color-blue); border: 1px solid var(--color-blue); }
+        .log-cat-TRAIL { background: rgba(242, 153, 74, 0.15); color: var(--color-orange); border: 1px solid var(--color-orange); }
+        .log-cat-EXIT { background: var(--color-short-bg); color: var(--color-short); border: 1px solid var(--color-short-border); }
+        .log-cat-STATUS { background: rgba(240, 185, 11, 0.15); color: var(--binance-gold); border: 1px solid var(--binance-gold); }
+        .log-cat-INFO { background: #181f2a; color: var(--text-muted); }
+        .log-cat-TIMEOUT { background: #261f10; color: var(--binance-gold); }
+        .log-cat-LIQUIDATED { background: #38121f; color: #ff5252; }
+
+        .tabs { display: flex; gap: 0.35rem; border-bottom: 1px solid var(--border-dim); padding-bottom: 0.4rem; }
+        .tab-btn {
+            background: none; border: 1px solid transparent; color: var(--text-muted);
+            font-size: 0.76rem; font-weight: 700; letter-spacing: 0.04em;
+            min-height: 38px; padding: 0.35rem 0.65rem; border-radius: 2px; cursor: pointer;
+        }
+        .tab-btn:active { transform: translateY(1px); }
+        .tab-btn.active { background: var(--bg-well); border-color: var(--border-subtle); color: var(--binance-gold); }
+
+        .table-responsive { max-height: 270px; overflow-y: auto; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.74rem; text-align: left; min-width: 520px; }
+        th { background: var(--bg-well); color: var(--text-muted); padding: 0.45rem 0.6rem; font-weight: 700; letter-spacing: 0.04em; position: sticky; top: 0; border-bottom: 1px solid var(--border-dim); }
+        td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border-dim); white-space: nowrap; }
+        tr:hover td { background: var(--bg-card-hover); }
+
+        /* Modal Overlay */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(4, 5, 8, 0.92); z-index: 100;
+            display: none; align-items: center; justify-content: center;
+            padding: clamp(0.6rem, 2vw, 1.25rem);
+        }
+        .modal-overlay.active { display: flex; }
+
+        .modal-card {
+            background: var(--bg-surface); border: 1px solid var(--border-strong);
+            border-radius: 4px; width: 100%; max-width: 780px; max-height: 92vh;
+            overflow-y: auto; display: flex; flex-direction: column; gap: 0.85rem;
+            padding: clamp(0.9rem, 2vw, 1.35rem); box-shadow: 0 20px 50px rgba(0, 0, 0, 0.85);
+        }
+
+        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-dim); padding-bottom: 0.55rem; }
+        .form-section-title { font-size: 0.76rem; font-weight: 700; color: var(--binance-gold); letter-spacing: 0.05em; margin-top: 0.4rem; border-bottom: 1px solid var(--border-dim); padding-bottom: 0.25rem; }
+        .form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 0.65rem; }
+        .form-group { display: flex; flex-direction: column; gap: 0.2rem; }
+        .form-group label { font-size: 0.68rem; font-weight: 700; color: var(--text-muted); letter-spacing: 0.04em; }
+        .form-control { background: var(--bg-well); border: 1px solid var(--border-subtle); color: var(--text-main); min-height: 42px; padding: 0.4rem 0.65rem; border-radius: 3px; font-size: 0.8rem; font-family: inherit; }
+        .form-control:focus { outline: none; border-color: var(--binance-gold); }
+
+        .quick-pills { display: flex; gap: 0.3rem; flex-wrap: wrap; margin-top: 0.25rem; }
+        .pill-btn {
+            background: var(--bg-well); border: 1px solid var(--border-subtle); color: var(--text-muted);
+            min-height: 30px; padding: 0.2rem 0.55rem; border-radius: 2px; font-size: 0.7rem; font-weight: 700; cursor: pointer;
+            transition: transform 0.05s steps(1);
+        }
+        .pill-btn:active { transform: translateY(1px); }
+        .pill-btn:hover, .pill-btn.active { background: var(--binance-gold); color: #000; }
+
+        .color-green { color: var(--color-long) !important; }
+        .color-red { color: var(--color-short) !important; }
+        .color-yellow { color: var(--binance-gold) !important; }
+        .color-blue { color: var(--color-blue) !important; }
+        .color-orange { color: var(--color-orange) !important; }
+        .font-bold { font-weight: 700; }
+    </style>
+</head>
+<body>
+
+    <!-- TOP NAVBAR -->
+    <header class="navbar">
+        <div class="brand-section">
+            <div class="brand-logo mono">
+                <span>BINANCE</span>
+                <span style="font-size: 0.68rem; color: var(--text-muted);">NATIVE</span>
+            </div>
+            <div>
+                <div class="brand-title">VOLSTEP S/R v6 ENGINE</div>
+                <div class="brand-subtitle mono" id="app-mode-sub">STANDALONE ON-DEVICE CLIENT</div>
+            </div>
+        </div>
+
+        <div class="nav-actions">
+            <!-- TACTILE INDUSTRIAL BREAKER SWITCH -->
+            <button id="btn-bot-toggle" class="btn-breaker state-stopped mono" onclick="toggleBot()">
+                <span class="pilot-lamp lamp-red" id="bot-pilot-lamp"></span>
+                <span id="btn-bot-text">ENGAGE BOT</span>
+            </button>
+
+            <!-- TELEMETRY BADGES -->
+            <div class="badge-telemetry mono" id="badge-bot-status" style="border-color: rgba(246, 70, 93, 0.4); color: var(--color-short); background: var(--color-short-bg);">
+                <span id="badge-bot-label">[STANDBY]</span>
+            </div>
+
+            <div class="badge-telemetry mono" title="Sisa Waktu Bar">
+                <span style="color: var(--text-muted);">BAR:</span>
+                <span id="badge-countdown" class="color-yellow font-bold">00:00s</span>
+            </div>
+
+            <!-- ACTION BUTTONS -->
+            <button class="btn-secondary mono" onclick="openModal()" title="Pengaturan Strategi & API">
+                SETUP
+            </button>
+            <button class="btn-secondary mono" onclick="resetStrategy()" title="Reset Saldo Simulasi">
+                RESET
+            </button>
+        </div>
+    </header>
+
+    <!-- MAIN CONTAINER -->
+    <main class="container">
+
+        <!-- ROW 1: 4 QUANT METRIC TILES -->
+        <section class="metrics-grid">
+            
+            <!-- 1. Real Testnet Balance -->
+            <div class="metric-card">
+                <div class="metric-card-header">
+                    <span>TESTNET EQUITY (USDT)</span>
+                    <span id="stat-mode-badge" class="pos-badge pos-badge-short">DISCONNECTED</span>
+                </div>
+                <div class="metric-value mono" id="stat-wallet-balance">$0.00</div>
+                <div class="metric-sub mono" id="stat-wallet-sub-desc">
+                    Setup API Key Testnet di menu Setup
+                </div>
+            </div>
+
+            <!-- 2. Live Market Price -->
+            <div class="metric-card" id="card-price-container">
+                <div class="metric-card-header">
+                    <span id="stat-symbol-tf" class="mono font-bold">BTCUSDT 1m</span>
+                    <span id="stat-tick-delta" class="mono font-bold" style="font-size: 0.72rem; color: var(--text-dim);">CONNECTING...</span>
+                </div>
+                <div class="metric-value mono font-bold" id="stat-live-price">--</div>
+                <div class="metric-sub mono">
+                    LOCAL: <span id="badge-server-time">--:--:--</span> | TICKS: <span id="stat-total-ticks">0</span>
+                </div>
+            </div>
+
+            <!-- 3. Confirmed S/R -->
+            <div class="metric-card">
+                <div class="metric-card-header">
+                    <span>CONFIRMED S/R</span>
+                    <span id="stat-sr-dir-badge" class="pos-badge pos-badge-flat">FLAT</span>
+                </div>
+                <div class="metric-value mono" id="stat-sr-confirmed">--</div>
+                <div class="metric-sub mono">
+                    STEP DELTA: <span id="stat-sr-pct" class="font-bold">0.00%</span>
+                </div>
+            </div>
+
+            <!-- 4. Next S/R Breakout Candidate -->
+            <div class="metric-card">
+                <div class="metric-card-header">
+                    <span>BREAKOUT TRIGGER S/R</span>
+                    <span id="stat-next-status" class="pos-badge pos-badge-flat">STANDBY</span>
+                </div>
+                <div class="metric-value mono" id="stat-next-price" style="font-size: clamp(1.15rem, 2.2vw, 1.45rem);">-</div>
+                <div class="metric-sub mono">
+                    <span id="stat-next-desc">Ambang volatilitas stabil</span>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ROW 2: WORKSPACE -->
+        <section class="workspace-grid">
+            
+            <!-- LEFT: POSITION & DYNAMIC TRAILING MONITOR -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-title mono">
+                        <span>EXECUTION & TRAILING ENGINE</span>
+                        <span id="pos-status-badge" class="pos-badge pos-badge-flat">FLAT</span>
+                    </div>
+                    <div class="mono" style="font-size: 0.7rem; color: var(--text-muted);" id="pos-leverage-info">
+                        15X CROSS | MARGIN: 25%
+                    </div>
+                </div>
+
+                <!-- POSITION DETAILS TABLE -->
+                <div class="pos-info-grid">
+                    <div>
+                        <div class="pos-item-label">ENTRY PRICE</div>
+                        <div class="pos-item-val mono" id="pos-entry-price">-</div>
+                    </div>
+                    <div>
+                        <div class="pos-item-label">DYNAMIC SL</div>
+                        <div class="pos-item-val mono color-orange font-bold" id="pos-sl-price">-</div>
+                    </div>
+                    <div>
+                        <div class="pos-item-label">TRAIL ACTIVATION (+0.80%)</div>
+                        <div class="pos-item-val mono color-blue font-bold" id="pos-act-target">-</div>
+                    </div>
+                    <div>
+                        <div class="pos-item-label">UNREALIZED PNL</div>
+                        <div class="pos-item-val mono font-bold" id="pos-unrealized-pnl">$0.00</div>
+                    </div>
+                    <div>
+                        <div class="pos-item-label">POSITION ROI</div>
+                        <div class="pos-item-val mono font-bold" id="pos-roi-pct">0.00%</div>
+                    </div>
+                    <div>
+                        <div class="pos-item-label">EST. LIQUIDATION</div>
+                        <div class="pos-item-val mono color-red" id="pos-liq-price">-</div>
+                    </div>
+                </div>
+
+                <!-- PENDING ORDER BANNER -->
+                <div id="pending-order-banner" style="display: none; background: rgba(240, 185, 11, 0.06); border: 1px dashed var(--binance-gold); border-radius: 3px; padding: 0.65rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.76rem;">
+                        <span class="mono font-bold color-yellow" id="pending-title">[PENDING LIMIT ORDER]</span>
+                        <span class="mono" id="pending-timeout-info">CANDLE 1 / 48</span>
+                    </div>
+                    <div style="margin-top: 0.2rem; font-size: 0.72rem; color: var(--text-muted);" id="pending-desc">
+                        TARGET: <span class="mono font-bold color-yellow" id="pending-target-px">-</span> (JARAK: <span class="mono" id="pending-dist">-</span>)
+                    </div>
+                </div>
+
+                <!-- 24-SEGMENT HARDWARE LED VU METER -->
+                <div class="vu-meter-box">
+                    <div class="vu-meter-header mono">
+                        <span>TRAILING STOP VU METER</span>
+                        <span id="trail-status-txt" class="color-yellow font-bold">STANDBY</span>
+                    </div>
+                    <div class="vu-led-strip" id="vu-led-strip"></div>
+                    <div class="vu-milestones mono">
+                        <div class="ms-box"><span>INITIAL SL</span><span id="ms-sl">-</span></div>
+                        <div class="ms-box"><span>ENTRY</span><span id="ms-entry">-</span></div>
+                        <div class="ms-box"><span>ACTIVATION</span><span id="ms-act" class="color-blue">-</span></div>
+                        <div class="ms-box"><span>PEAK</span><span id="ms-peak" class="color-yellow">-</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RIGHT: TERMINAL CONSOLE LOG & TRADE HISTORY -->
+            <div class="card">
+                <div class="tabs mono">
+                    <button class="tab-btn active" id="tab-btn-logs" onclick="switchTab('logs')">TTY CONSOLE STREAM</button>
+                    <button class="tab-btn" id="tab-btn-trades" onclick="switchTab('trades')">TRADE AUDIT (<span id="count-trades">0</span>)</button>
+                </div>
+
+                <!-- TAB 1: TERMINAL LOG STREAM -->
+                <div id="tab-content-logs">
+                    <div class="console-wrapper">
+                        <div class="console-topbar mono">
+                            <span>>_ STANDALONE ON-DEVICE LOGS</span>
+                            <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                <label style="display: flex; align-items: center; gap: 0.25rem; cursor: pointer; color: var(--text-muted); font-size: 0.68rem;">
+                                    <input type="checkbox" id="chk-autoscroll" checked> AUTO-SCROLL
+                                </label>
+                                <button type="button" class="pill-btn mono" onclick="clearLogs()" style="min-height: 22px; padding: 0 0.4rem;">CLEAR</button>
+                            </div>
+                        </div>
+                        <div class="console-body mono" id="logs-container">
+                            <div class="log-entry">
+                                <span class="log-time">--:--:--</span>
+                                <span class="log-cat log-cat-INFO">[INIT]</span>
+                                <span>Menginisialisasi engine S/R Pine Script mandiri...<span class="cursor-blink"></span></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- TAB 2: COMPLETED TRADES TABLE -->
+                <div id="tab-content-trades" style="display: none;">
+                    <div class="table-responsive">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>SIDE</th>
+                                    <th>ENTRY</th>
+                                    <th>EXIT</th>
+                                    <th>NET PNL</th>
+                                    <th>ROI</th>
+                                    <th>PEAK</th>
+                                    <th>REASON</th>
+                                    <th>TIME</th>
+                                </tr>
+                            </thead>
+                            <tbody id="trades-tbody" class="mono">
+                                <tr>
+                                    <td colspan="8" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat trade.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- MODAL PENGATURAN STRATEGI & BINANCE DEMO API -->
+    <div class="modal-overlay" id="settingsModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <div class="mono font-bold" style="font-size: 0.92rem; letter-spacing: 0.05em;">SYSTEM CONFIGURATION & API</div>
+                <button class="btn-secondary mono" onclick="closeModal()" style="min-height: 34px; padding: 0.2rem 0.6rem;">ESC</button>
+            </div>
+
+            <form id="configForm" onsubmit="saveConfig(event)">
+                
+                <!-- 1. BINANCE DEMO API (TESTNET) -->
+                <div class="form-section-title mono">01. BINANCE FUTURES TESTNET CREDENTIALS</div>
+                <div style="font-size: 0.72rem; color: var(--text-muted); margin-bottom: 0.4rem;">
+                    Dapatkan API Key di <a href="https://testnet.binancefuture.com" target="_blank" style="color: var(--binance-gold); text-decoration: underline;">testnet.binancefuture.com</a>. Saldo riil testnet akan otomatis tersinkronisasi langsung dari HP.
+                </div>
+                <div class="form-grid">
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>TESTNET API KEY</label>
+                        <input type="password" id="cfg-api-key" class="form-control mono" placeholder="Ketik atau paste API Key...">
+                    </div>
+                    <div class="form-group" style="grid-column: span 2;">
+                        <label>TESTNET SECRET KEY</label>
+                        <input type="password" id="cfg-api-secret" class="form-control mono" placeholder="Ketik atau paste Secret Key...">
+                    </div>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.4rem; align-items: center;">
+                    <button type="button" class="btn-secondary mono" onclick="verifyTestnetKey()">VERIFY TESTNET CONNECTION</button>
+                    <span id="testnet-verify-res" class="mono" style="font-size: 0.74rem;"></span>
+                </div>
+
+                <!-- 2. MARKET & TIMEFRAME -->
+                <div class="form-section-title mono">02. MARKET PAIR & TIMEFRAME</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>COIN SYMBOL (USDT-M)</label>
+                        <input type="text" id="cfg-symbol" class="form-control mono font-bold" value="BTCUSDT" required>
+                        <div class="quick-pills">
+                            <button type="button" class="pill-btn mono" onclick="setCoin('BTCUSDT')">BTC</button>
+                            <button type="button" class="pill-btn mono" onclick="setCoin('ETHUSDT')">ETH</button>
+                            <button type="button" class="pill-btn mono" onclick="setCoin('SOLUSDT')">SOL</button>
+                            <button type="button" class="pill-btn mono" onclick="setCoin('BNBUSDT')">BNB</button>
+                            <button type="button" class="pill-btn mono" onclick="setCoin('DOGEUSDT')">DOGE</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>TIMEFRAME</label>
+                        <select id="cfg-timeframe" class="form-control mono">
+                            <option value="1m">1m (Fast Tick)</option>
+                            <option value="3m">3m</option>
+                            <option value="5m">5m</option>
+                            <option value="15m">15m</option>
+                            <option value="30m">30m</option>
+                            <option value="1h">1h</option>
+                            <option value="4h">4h</option>
+                            <option value="1d">1d</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 3. VOLSTEP S/R INDICATOR -->
+                <div class="form-section-title mono">03. VOLSTEP S/R ENGINE (PINE SCRIPT)</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>LINE MODE</label>
+                        <select id="cfg-line-mode" class="form-control mono">
+                            <option value="Anchor">Anchor (Snaps to Close)</option>
+                            <option value="Without Anchor">Without Anchor (Step Shift)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>VOLATILITY TYPE</label>
+                        <select id="cfg-vol-type" class="form-control mono">
+                            <option value="Stdev">Stdev (Standard Deviation)</option>
+                            <option value="Atr">Atr (Average True Range)</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>LOOKBACK PERIOD (L)</label>
+                        <input type="number" id="cfg-vol-len" class="form-control mono" value="200" min="2" required>
+                    </div>
+                    <div class="form-group">
+                        <label>MULTIPLIER (M)</label>
+                        <input type="number" step="0.1" id="cfg-vol-mult" class="form-control mono" value="4.0" required>
+                    </div>
+                </div>
+
+                <!-- 4. FUTURES CROSS & TRAILING STOP -->
+                <div class="form-section-title mono">04. FUTURES CROSS RISK & TRAILING LOGIC</div>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>LEVERAGE CROSS (X)</label>
+                        <input type="number" step="1" id="cfg-leverage" class="form-control mono font-bold" value="15" min="1" max="125" required>
+                    </div>
+                    <div class="form-group">
+                        <label>MARGIN ALLOCATION %</label>
+                        <input type="number" step="1" id="cfg-margin-pct" class="form-control mono font-bold" value="25" min="1" max="100" required>
+                    </div>
+                    <div class="form-group">
+                        <label>[PTL] PULLBACK LIMIT %</label>
+                        <input type="number" step="0.05" id="cfg-pullback-pct" class="form-control mono" value="0.25" required>
+                    </div>
+                    <div class="form-group">
+                        <label>[PTL] INITIAL STOP LOSS %</label>
+                        <input type="number" step="0.1" id="cfg-sl-fixed-pct" class="form-control mono" value="1.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label>[TRAIL] ACTIVATION PROFIT %</label>
+                        <input type="number" step="0.1" id="cfg-trail-act-pct" class="form-control mono" value="0.80" required>
+                    </div>
+                    <div class="form-group">
+                        <label>[TRAIL] CALLBACK DELTA %</label>
+                        <input type="number" step="0.1" id="cfg-trail-cb-pct" class="form-control mono" value="1.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label>PENDING TIMEOUT (BARS)</label>
+                        <input type="number" step="1" id="cfg-timeout-bars" class="form-control mono" value="48" required>
+                    </div>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.75rem; border-top: 1px solid var(--border-dim); padding-top: 0.75rem;">
+                    <button type="button" class="btn-secondary mono" onclick="closeModal()">CANCEL</button>
+                    <button type="submit" class="btn-secondary mono" style="border-color: var(--binance-gold); color: var(--binance-gold);">APPLY CONFIG</button>
+                </div>
+
+            </form>
+        </div>
+    </div>
+
+    <!-- NATIVE STANDALONE JAVASCRIPT ENGINE (100% RUNS ON DEVICE) -->
+    <script>
+        const LED_COUNT = 24;
+        let ws = null;
+        let isBotActive = false;
+        let totalTicks = 0;
+        let lastPrice = null;
+        let countdownTimer = null;
+        let expectedBarCloseMs = 0;
+
+        // Config defaults + LocalStorage loading
+        let cfg = {
+            api_key: '',
+            api_secret: '',
+            symbol: 'BTCUSDT',
+            timeframe: '1m',
+            line_mode: 'Anchor',
+            vol_type: 'Stdev',
+            vol_len: 200,
+            vol_mult: 4.0,
+            leverage: 15,
+            margin_pct: 25,
+            pullback_pct: 0.25,
+            sl_fixed_pct: 1.00,
+            trail_act_pct: 0.80,
+            trail_cb_pct: 1.00,
+            timeout_bars: 48,
+            maker_fee_pct: 0.02,
+            taker_fee_pct: 0.05,
+            mmr_pct: 0.40,
+        };
+
+        function loadSavedConfig() {
+            try {
+                const s = localStorage.getItem('vtrail_cfg');
+                if (s) {
+                    const parsed = JSON.parse(s);
+                    cfg = Object.assign(cfg, parsed);
+                }
+            } catch (e) {}
+        }
+        function saveConfigToStorage() {
+            try { localStorage.setItem('vtrail_cfg', JSON.stringify(cfg)); } catch (e) {}
+        }
+        loadSavedConfig();
+
+        // S/R Engine State
+        let confirmedSr = null;
+        let prevConfirmedSr = null;
+        let srDirection = 0;
+        let nextSrActive = false;
+        let nextSrDir = null;
+        let nextSrPrice = null;
+        let nextSrPct = null;
+        let closesHistory = [];
+        let trHistory = [];
+        let lastClosedCandleTime = 0;
+
+        // Strategy Engine State
+        let walletBalance = 0.0;
+        let initialBalance = 0.0;
+        let testnetConnected = false;
+        let posSide = 0; // 1 = LONG, -1 = SHORT, 0 = FLAT
+        let posQty = 0.0;
+        let posEntryPrice = 0.0;
+        let posMarginUsed = 0.0;
+        let posSlPrice = 0.0;
+        let posHighest = 0.0;
+        let posLowest = 0.0;
+        let posTrailAct = false;
+        let isLiquidated = false;
+        let hasPending = false;
+        let pendingSide = 0;
+        let pendingPrice = 0.0;
+        let pendingSl = 0.0;
+        let pendingBarCount = 0;
+        let eventLogs = [];
+        let tradeHistory = [];
+
+        function logEvent(category, text) {
+            const time = new Date().toLocaleTimeString();
+            eventLogs.unshift({ time, category, text });
+            if (eventLogs.length > 80) eventLogs.pop();
+            renderLogs();
+        }
+
+        function renderLogs() {
+            const container = document.getElementById('logs-container');
+            let html = '';
+            eventLogs.forEach((l, idx) => {
+                const cursor = idx === 0 ? '<span class="cursor-blink"></span>' : '';
+                html += `
+                    <div class="log-entry">
+                        <span class="log-time">${l.time}</span>
+                        <span class="log-cat log-cat-${l.category}">[${l.category}]</span>
+                        <span>${l.text}${cursor}</span>
+                    </div>
+                `;
+            });
+            container.innerHTML = html;
+            if (document.getElementById('chk-autoscroll').checked) {
+                container.scrollTop = 0;
+            }
+        }
+
+        // Initialize LED strip
+        function initLedStrip() {
+            const strip = document.getElementById('vu-led-strip');
+            strip.innerHTML = '';
+            for (let i = 0; i < LED_COUNT; i++) {
+                const cell = document.createElement('div');
+                cell.className = 'led-segment';
+                cell.id = 'led-seg-' + i;
+                strip.appendChild(cell);
+            }
+        }
+        initLedStrip();
+
+        function updateLedVU(pct, isActivated) {
+            const numLit = Math.min(LED_COUNT, Math.max(0, Math.round((pct / 100) * LED_COUNT)));
+            for (let i = 0; i < LED_COUNT; i++) {
+                const el = document.getElementById('led-seg-' + i);
+                if (!el) continue;
+                if (i < numLit) {
+                    el.className = isActivated ? 'led-segment lit-amber' : 'led-segment lit-green';
+                } else {
+                    el.className = 'led-segment';
+                }
+            }
+        }
+
+        function openModal() { document.getElementById('settingsModal').classList.add('active'); }
+        function closeModal() { document.getElementById('settingsModal').classList.remove('active'); }
+        function setCoin(sym) { document.getElementById('cfg-symbol').value = sym; }
+
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            if (tab === 'logs') {
+                document.getElementById('tab-btn-logs').classList.add('active');
+                document.getElementById('tab-content-logs').style.display = 'block';
+                document.getElementById('tab-content-trades').style.display = 'none';
+            } else {
+                document.getElementById('tab-btn-trades').classList.add('active');
+                document.getElementById('tab-content-logs').style.display = 'none';
+                document.getElementById('tab-content-trades').style.display = 'block';
+            }
+        }
+
+        function clearLogs() {
+            eventLogs = [];
+            document.getElementById('logs-container').innerHTML = '<div class="log-entry"><span class="log-time">' + new Date().toLocaleTimeString() + '</span><span class="log-cat log-cat-INFO">[CLEAR]</span><span>Log console dibersihkan.<span class="cursor-blink"></span></span></div>';
+        }
+
+        function toggleBot() {
+            isBotActive = !isBotActive;
+            updateBotUI(isBotActive);
+            logEvent('STATUS', isBotActive ? 'Bot BERJALAN (ACTIVE). Memindai sinyal S/R...' : 'Bot DIHENTIKAN (STANDBY). Pemindaian dinonaktifkan.');
+        }
+
+        function updateBotUI(active) {
+            const btn = document.getElementById('btn-bot-toggle');
+            const pilot = document.getElementById('bot-pilot-lamp');
+            const txt = document.getElementById('btn-bot-text');
+            const badge = document.getElementById('badge-bot-status');
+            const badgeLbl = document.getElementById('badge-bot-label');
+
+            if (active) {
+                btn.className = 'btn-breaker state-running mono';
+                pilot.className = 'pilot-lamp lamp-green';
+                txt.innerText = 'DISENGAGE BOT';
+                badge.style.borderColor = 'rgba(14, 203, 129, 0.4)';
+                badge.style.color = 'var(--color-long)';
+                badge.style.background = 'var(--color-long-bg)';
+                badgeLbl.innerText = '[RUNNING]';
+            } else {
+                btn.className = 'btn-breaker state-stopped mono';
+                pilot.className = 'pilot-lamp lamp-red';
+                txt.innerText = 'ENGAGE BOT';
+                badge.style.borderColor = 'rgba(246, 70, 93, 0.4)';
+                badge.style.color = 'var(--color-short)';
+                badge.style.background = 'var(--color-short-bg)';
+                badgeLbl.innerText = '[STANDBY]';
+            }
+        }
+
+        function fmtUsd(val) {
+            if (val === null || val === undefined || isNaN(val)) return '-';
+            return (val >= 0 ? '+$' : '-$') + Math.abs(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+        function fmtPx(val) {
+            if (val === null || val === undefined || isNaN(val) || val === 0) return '-';
+            return Number(val).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+        }
+
+        // Web Crypto HMAC-SHA256 for Binance Testnet
+        async function hmacSha256(secret, message) {
+            const enc = new TextEncoder();
+            const key = await crypto.subtle.importKey(
+                'raw',
+                enc.encode(secret),
+                { name: 'HMAC', hash: 'SHA-256' },
+                false,
+                ['sign']
+            );
+            const signature = await crypto.subtle.sign('HMAC', key, enc.encode(message));
+            return Array.from(new Uint8Array(signature)).map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function verifyTestnetKey() {
+            const apiKey = document.getElementById('cfg-api-key').value.trim();
+            const apiSecret = document.getElementById('cfg-api-secret').value.trim();
+            const resEl = document.getElementById('testnet-verify-res');
+
+            if (!apiKey || !apiSecret) {
+                resEl.innerText = '[ERR] Ketik API Key & Secret terlebih dahulu.';
+                resEl.className = 'mono color-red';
+                return;
+            }
+
+            resEl.innerText = 'PINGING BINANCE TESTNET...';
+            resEl.className = 'mono color-yellow';
+
+            try {
+                const ts = Date.now();
+                const query = `timestamp=${ts}`;
+                const signature = await hmacSha256(apiSecret, query);
+                const url = `https://testnet.binancefuture.com/fapi/v2/balance?${query}&signature=${signature}`;
+
+                const resp = await fetch(url, {
+                    headers: { 'X-MBX-APIKEY': apiKey }
+                });
+                const data = await resp.json();
+
+                if (Array.isArray(data)) {
+                    let usdt = 0;
+                    data.forEach(b => {
+                        if (b.asset === 'USDT') usdt = parseFloat(b.balance);
+                    });
+                    walletBalance = usdt;
+                    initialBalance = usdt;
+                    testnetConnected = true;
+                    cfg.api_key = apiKey;
+                    cfg.api_secret = apiSecret;
+                    saveConfigToStorage();
+
+                    resEl.innerText = `[OK] CONNECTED! Balance: $${usdt.toLocaleString()} USDT`;
+                    resEl.className = 'mono color-green';
+                    updateDashboardBalance();
+                    logEvent('INFO', `Saldo Binance Testnet tersinkron: $${usdt.toLocaleString()} USDT`);
+                } else {
+                    resEl.innerText = `[ERR] ${data.msg || 'Verifikasi gagal'}`;
+                    resEl.className = 'mono color-red';
+                }
+            } catch (err) {
+                resEl.innerText = `[ERR] ${err.message}`;
+                resEl.className = 'mono color-red';
+            }
+        }
+
+        function updateDashboardBalance() {
+            const balBadge = document.getElementById('stat-mode-badge');
+            const balEl = document.getElementById('stat-wallet-balance');
+            const subDesc = document.getElementById('stat-wallet-sub-desc');
+
+            if (testnetConnected) {
+                balBadge.innerText = 'SYNCED';
+                balBadge.className = 'pos-badge pos-badge-long';
+                balEl.innerText = '$' + Number(walletBalance).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+                subDesc.innerText = 'Saldo live Binance Futures Testnet';
+            } else {
+                balBadge.innerText = 'DISCONNECTED';
+                balBadge.className = 'pos-badge pos-badge-short';
+                balEl.innerText = '$0.00';
+                subDesc.innerText = 'Setup API Key Testnet di menu Setup';
+            }
+        }
+
+        // =========================================================================
+        // MATHEMATICAL S/R CALCULATIONS (PINE SCRIPT v6 PARITY)
+        // =========================================================================
+        function calcStdev(values) {
+            if (values.length < 2) return 0;
+            const n = values.length;
+            const mean = values.reduce((a, b) => a + b, 0) / n;
+            const variance = values.reduce((acc, x) => acc + Math.pow(x - mean, 2), 0) / (n - 1);
+            return Math.sqrt(Math.max(0, variance));
+        }
+
+        function computeVolatility(high, low, close) {
+            if (cfg.vol_type === 'Stdev') {
+                const sub = closesHistory.slice(-cfg.vol_len);
+                return calcStdev(sub) * cfg.vol_mult;
+            } else {
+                // ATR
+                if (trHistory.length === 0) return (high - low) * cfg.vol_mult;
+                const sub = trHistory.slice(-cfg.vol_len);
+                const atr = sub.reduce((a, b) => a + b, 0) / sub.length;
+                return atr * cfg.vol_mult;
+            }
+        }
+
+        function processClosedCandle(openP, highP, lowP, closeP, candleTime) {
+            closesHistory.push(closeP);
+            const prevClose = closesHistory.length >= 2 ? closesHistory[closesHistory.length - 2] : closeP;
+            const tr = Math.max(highP - lowP, Math.abs(highP - prevClose), Math.abs(lowP - prevClose));
+            trHistory.push(tr);
+            if (closesHistory.length > 1200) closesHistory.shift();
+            if (trHistory.length > 1200) trHistory.shift();
+
+            if (confirmedSr === null) {
+                confirmedSr = closeP;
+                prevConfirmedSr = closeP;
+                srDirection = 0;
+                return;
+            }
+
+            const volValue = computeVolatility(highP, lowP, closeP);
+            const diff = Math.abs(closeP - confirmedSr);
+            const isStep = diff > volValue;
+            let stepDir = 0;
+
+            if (isStep) {
+                stepDir = closeP > confirmedSr ? 1 : -1;
+                prevConfirmedSr = confirmedSr;
+                if (cfg.line_mode === 'Anchor') {
+                    confirmedSr = closeP;
+                } else {
+                    confirmedSr = confirmedSr + (stepDir * volValue);
+                }
+                srDirection = stepDir;
+            }
+
+            // Strategy Candle Close Hook
+            onStrategyCandleClose(openP, highP, lowP, closeP, isStep, stepDir);
+            updateSrDisplay(closeP);
+        }
+
+        function updateSrDisplay(currentPrice) {
+            document.getElementById('stat-sr-confirmed').innerText = confirmedSr !== null ? fmtPx(confirmedSr) : '--';
+            const srDirEl = document.getElementById('stat-sr-dir-badge');
+            const srPctEl = document.getElementById('stat-sr-pct');
+
+            if (confirmedSr && currentPrice) {
+                const pct = ((currentPrice - confirmedSr) / confirmedSr) * 100.0;
+                const isLong = pct >= 0;
+                srDirEl.innerText = isLong ? 'BULL STEP' : 'BEAR STEP';
+                srDirEl.className = 'pos-badge ' + (isLong ? 'pos-badge-long' : 'pos-badge-short');
+                srPctEl.innerText = (isLong ? '+' : '') + pct.toFixed(2) + '%';
+                srPctEl.className = 'font-bold ' + (isLong ? 'color-green' : 'color-red');
+            }
+        }
+
+        // =========================================================================
+        // STRATEGY EXECUTION ENGINE
+        // =========================================================================
+        function onStrategyCandleClose(openP, highP, lowP, closeP, isStep, stepDir) {
+            // Check pending fill
+            if (hasPending) {
+                tryFillPending(openP, lowP, highP);
+                if (hasPending) {
+                    pendingBarCount++;
+                    if (pendingBarCount > cfg.timeout_bars) {
+                        hasPending = false;
+                        logEvent('TIMEOUT', `LIMIT ORDER EXPIRED: Tidak tersentuh selama ${cfg.timeout_bars} bar. Dibatalkan.`);
+                    }
+                }
+            }
+
+            // Check liquidation & SL exit
+            if (posSide !== 0 && !isLiquidated) {
+                const worstP = posSide === 1 ? lowP : highP;
+                checkLiquidation(worstP);
+                if (posSide !== 0) {
+                    managePositionExit(highP, lowP);
+                }
+            }
+
+            // Place New S/R Step Orders (Only if Bot is Active)
+            if (isStep && posSide === 0 && !hasPending && !isLiquidated && isBotActive) {
+                hasPending = true;
+                pendingBarCount = 0;
+                const pbMult = cfg.pullback_pct / 100.0;
+                const slMult = cfg.sl_fixed_pct / 100.0;
+
+                if (stepDir === 1) { // BUY STEP
+                    pendingSide = 1;
+                    pendingPrice = closeP * (1.0 - pbMult);
+                    pendingSl = pendingPrice * (1.0 - slMult);
+                    logEvent('SIGNAL', `STEP BUY CONFIRMED: Pasang Pending LONG Limit @ ${fmtPx(pendingPrice)} (-${cfg.pullback_pct}%) | SL: ${fmtPx(pendingSl)}`);
+                } else if (stepDir === -1) { // SELL STEP
+                    pendingSide = -1;
+                    pendingPrice = closeP * (1.0 + pbMult);
+                    pendingSl = pendingPrice * (1.0 + slMult);
+                    logEvent('SIGNAL', `STEP SELL CONFIRMED: Pasang Pending SHORT Limit @ ${fmtPx(pendingPrice)} (+${cfg.pullback_pct}%) | SL: ${fmtPx(pendingSl)}`);
+                }
+            }
+            updatePositionUI(closeP);
+        }
+
+        function onStrategyLiveTick(price, highP, lowP) {
+            if (hasPending && !isLiquidated) {
+                tryFillPending(price, lowP || price, highP || price);
+            }
+            if (posSide !== 0 && !isLiquidated) {
+                managePositionExit(highP || price, lowP || price);
+            }
+            updatePositionUI(price);
+        }
+
+        function tryFillPending(currPrice, lowP, highP) {
+            let filled = false;
+            let fillPx = 0.0;
+            if (pendingSide === 1 && lowP <= pendingPrice) {
+                filled = true; fillPx = pendingPrice;
+            } else if (pendingSide === -1 && highP >= pendingPrice) {
+                filled = true; fillPx = pendingPrice;
+            }
+
+            if (filled) {
+                posSide = pendingSide;
+                posEntryPrice = fillPx;
+                posSlPrice = pendingSl;
+                posHighest = fillPx;
+                posLowest = fillPx;
+                posTrailAct = false;
+                hasPending = false;
+
+                const marginAlloc = (walletBalance * (cfg.margin_pct / 100.0));
+                posMarginUsed = Math.max(10.0, marginAlloc);
+                const notional = posMarginUsed * cfg.leverage;
+                posQty = notional / fillPx;
+
+                const fee = notional * (cfg.maker_fee_pct / 100.0);
+                walletBalance -= fee;
+                updateDashboardBalance();
+
+                const sideStr = posSide === 1 ? 'LONG' : 'SHORT';
+                const actTarget = fillPx * (1.0 + posSide * (cfg.trail_act_pct / 100.0));
+                logEvent('FILL', `${sideStr} LIMIT FILLED @ ${fmtPx(fillPx)} | Notional: $${notional.toFixed(2)} | SL: ${fmtPx(posSlPrice)} | Trail Act: ${fmtPx(actTarget)}`);
+            }
+        }
+
+        function managePositionExit(highP, lowP) {
+            if (posSide === 0) return;
+            if (highP > posHighest) posHighest = highP;
+            if (lowP < posLowest || posLowest === 0) posLowest = lowP;
+
+            let closeTrade = false;
+            let exitPx = 0.0;
+            let exitReason = '';
+            const actDelta = cfg.trail_act_pct / 100.0;
+            const cbDelta = cfg.trail_cb_pct / 100.0;
+
+            if (posSide === 1) { // LONG
+                if (!posTrailAct && posHighest >= posEntryPrice * (1.0 + actDelta)) {
+                    posTrailAct = true;
+                    logEvent('TRAIL', `TRAIL ACTIVE: Long mencapai target puncak ${fmtPx(posHighest)} (+${cfg.trail_act_pct}%). Trailing SL dinamis aktif.`);
+                }
+                if (posTrailAct) {
+                    const dynSl = posHighest * (1.0 - cbDelta);
+                    if (dynSl > posSlPrice) posSlPrice = dynSl;
+                }
+                if (lowP <= posSlPrice) {
+                    closeTrade = true; exitPx = posSlPrice;
+                    exitReason = posTrailAct ? 'Trail' : 'SL';
+                }
+            } else { // SHORT
+                if (!posTrailAct && posLowest <= posEntryPrice * (1.0 - actDelta)) {
+                    posTrailAct = true;
+                    logEvent('TRAIL', `TRAIL ACTIVE: Short mencapai target dasar ${fmtPx(posLowest)} (-${cfg.trail_act_pct}%). Trailing SL dinamis aktif.`);
+                }
+                if (posTrailAct) {
+                    const dynSl = posLowest * (1.0 + cbDelta);
+                    if (dynSl < posSlPrice) posSlPrice = dynSl;
+                }
+                if (highP >= posSlPrice) {
+                    closeTrade = true; exitPx = posSlPrice;
+                    exitReason = posTrailAct ? 'Trail' : 'SL';
+                }
+            }
+
+            if (closeTrade) {
+                let pnl = 0;
+                let peakPct = 0;
+                if (posSide === 1) {
+                    pnl = posQty * (exitPx - posEntryPrice);
+                    peakPct = ((posHighest / posEntryPrice) - 1.0) * 100.0;
+                } else {
+                    pnl = posQty * (posEntryPrice - exitPx);
+                    peakPct = (1.0 - (posLowest / posEntryPrice)) * 100.0;
+                }
+
+                const takerFee = (posQty * exitPx) * (cfg.taker_fee_pct / 100.0);
+                const netPnl = pnl - takerFee;
+                walletBalance += netPnl;
+                updateDashboardBalance();
+
+                const roiPct = posMarginUsed > 0 ? (netPnl / posMarginUsed) * 100.0 : 0.0;
+                const sideStr = posSide === 1 ? 'LONG' : 'SHORT';
+
+                tradeHistory.unshift({
+                    side: sideStr,
+                    entry_price: posEntryPrice,
+                    exit_price: exitPx,
+                    net_pnl: netPnl,
+                    roi_pct: roiPct,
+                    peak_pct: peakPct,
+                    reason: exitReason,
+                    time: new Date().toLocaleTimeString()
+                });
+                renderTradesTable();
+
+                const sign = netPnl >= 0 ? '+' : '-';
+                logEvent('EXIT', `EXIT ${sideStr} (${exitReason}) @ ${fmtPx(exitPx)} | Net PnL: ${sign}$${Math.abs(netPnl).toFixed(2)} (${roiPct >= 0 ? '+' : ''}${roiPct.toFixed(2)}%) | Saldo: $${walletBalance.toFixed(2)}`);
+                posSide = 0;
+            }
+        }
+
+        function checkLiquidation(worstPrice) {
+            if (posSide === 0) return;
+            const upnl = posSide === 1 ? posQty * (worstPrice - posEntryPrice) : posQty * (posEntryPrice - worstPrice);
+            const mmr = (posQty * worstPrice) * (cfg.mmr_pct / 100.0);
+            if ((walletBalance + upnl) <= mmr) {
+                isLiquidated = true;
+                walletBalance = 0.0;
+                updateDashboardBalance();
+                logEvent('LIQUIDATED', `LIQUIDATED (Margin Call) pada harga ${fmtPx(worstPrice)}. Saldo habis.`);
+                posSide = 0;
+            }
+        }
+
+        function updatePositionUI(curPx) {
+            const badgeEl = document.getElementById('pos-status-badge');
+            const pendBanner = document.getElementById('pending-order-banner');
+            document.getElementById('pos-leverage-info').innerText = `${cfg.leverage}X CROSS | MARGIN: ${cfg.margin_pct}%`;
+
+            if (posSide !== 0) {
+                pendBanner.style.display = 'none';
+                const isLong = posSide === 1;
+                badgeEl.innerText = `ACTIVE ${isLong ? 'LONG' : 'SHORT'} (${posQty.toFixed(4)})`;
+                badgeEl.className = 'pos-badge ' + (isLong ? 'pos-badge-long' : 'pos-badge-short');
+
+                document.getElementById('pos-entry-price').innerText = fmtPx(posEntryPrice);
+                document.getElementById('pos-sl-price').innerText = fmtPx(posSlPrice);
+                const actTarget = posEntryPrice * (1.0 + posSide * (cfg.trail_act_pct / 100.0));
+                document.getElementById('pos-act-target').innerText = fmtPx(actTarget);
+
+                const upnl = isLong ? posQty * (curPx - posEntryPrice) : posQty * (posEntryPrice - curPx);
+                const pnlEl = document.getElementById('pos-unrealized-pnl');
+                pnlEl.innerText = fmtUsd(upnl);
+                pnlEl.className = 'pos-item-val mono font-bold ' + (upnl >= 0 ? 'color-green' : 'color-red');
+
+                const roi = posMarginUsed > 0 ? (upnl / posMarginUsed) * 100.0 : 0.0;
+                const roiPosEl = document.getElementById('pos-roi-pct');
+                roiPosEl.innerText = (roi >= 0 ? '+' : '') + roi.toFixed(2) + '%';
+                roiPosEl.className = 'pos-item-val mono font-bold ' + (roi >= 0 ? 'color-green' : 'color-red');
+
+                // Est Liq Price
+                const estLiq = isLong ? posEntryPrice - (posMarginUsed / posQty) : posEntryPrice + (posMarginUsed / posQty);
+                document.getElementById('pos-liq-price').innerText = fmtPx(estLiq);
+
+                const trailStatusTxt = document.getElementById('trail-status-txt');
+                document.getElementById('ms-sl').innerText = fmtPx(posSlPrice);
+                document.getElementById('ms-entry').innerText = fmtPx(posEntryPrice);
+                document.getElementById('ms-act').innerText = fmtPx(actTarget);
+                document.getElementById('ms-peak').innerText = fmtPx(isLong ? posHighest : posLowest);
+
+                if (posTrailAct) {
+                    trailStatusTxt.innerText = 'TRAILING LOCKED (ACTIVE)';
+                    trailStatusTxt.className = 'color-orange font-bold mono';
+                    updateLedVU(100, true);
+                } else {
+                    trailStatusTxt.innerText = 'ARMED (MONITORING TARGET)';
+                    trailStatusTxt.className = 'color-yellow font-bold mono';
+                    let pct = 0;
+                    if (posEntryPrice && actTarget && curPx) {
+                        const totalDist = Math.abs(actTarget - posEntryPrice);
+                        const currDist = isLong ? (curPx - posEntryPrice) : (posEntryPrice - curPx);
+                        pct = Math.max(0, Math.min(100, (currDist / totalDist) * 100));
+                    }
+                    updateLedVU(pct, false);
+                }
+
+            } else if (hasPending) {
+                const isLong = pendingSide === 1;
+                badgeEl.innerText = `PENDING LIMIT ${isLong ? 'LONG' : 'SHORT'}`;
+                badgeEl.className = 'pos-badge pos-badge-pending';
+                pendBanner.style.display = 'block';
+
+                document.getElementById('pending-title').innerText = `[LIMIT ${isLong ? 'LONG' : 'SHORT'} ARMED]`;
+                document.getElementById('pending-timeout-info').innerText = `EXPIRY: BAR ${pendingBarCount} / ${cfg.timeout_bars}`;
+                document.getElementById('pending-target-px').innerText = fmtPx(pendingPrice);
+                const distPct = curPx ? Math.abs((curPx - pendingPrice) / curPx) * 100.0 : 0.0;
+                document.getElementById('pending-dist').innerText = distPct.toFixed(2) + '% from close';
+
+                document.getElementById('pos-entry-price').innerText = '-';
+                document.getElementById('pos-sl-price').innerText = fmtPx(pendingSl);
+                document.getElementById('pos-act-target').innerText = '-';
+                document.getElementById('pos-unrealized-pnl').innerText = '$0.00';
+                document.getElementById('pos-roi-pct').innerText = '0.00%';
+                document.getElementById('pos-liq-price').innerText = '-';
+                document.getElementById('trail-status-txt').innerText = 'WAITING LIMIT FILL';
+                updateLedVU(0, false);
+
+            } else {
+                badgeEl.innerText = 'FLAT';
+                badgeEl.className = 'pos-badge pos-badge-flat';
+                pendBanner.style.display = 'none';
+
+                document.getElementById('pos-entry-price').innerText = '-';
+                document.getElementById('pos-sl-price').innerText = '-';
+                document.getElementById('pos-act-target').innerText = '-';
+                document.getElementById('pos-unrealized-pnl').innerText = '$0.00';
+                document.getElementById('pos-roi-pct').innerText = '0.00%';
+                document.getElementById('pos-liq-price').innerText = '-';
+                document.getElementById('trail-status-txt').innerText = isBotActive ? 'SCANNING NEW S/R' : 'BOT STANDBY';
+                updateLedVU(0, false);
+                document.getElementById('ms-sl').innerText = '-';
+                document.getElementById('ms-entry').innerText = '-';
+                document.getElementById('ms-act').innerText = '-';
+                document.getElementById('ms-peak').innerText = '-';
+            }
+        }
+
+        function renderTradesTable() {
+            document.getElementById('count-trades').innerText = tradeHistory.length;
+            let html = '';
+            tradeHistory.forEach(t => {
+                const isWin = t.net_pnl >= 0;
+                const pnlClass = isWin ? 'color-green' : 'color-red';
+                const sideClass = t.side === 'LONG' ? 'color-green' : 'color-red';
+                html += `
+                    <tr>
+                        <td class="${sideClass} font-bold">${t.side}</td>
+                        <td>${fmtPx(t.entry_price)}</td>
+                        <td>${fmtPx(t.exit_price)}</td>
+                        <td class="${pnlClass} font-bold">${fmtUsd(t.net_pnl)}</td>
+                        <td class="${pnlClass}">${(t.roi_pct >= 0 ? '+' : '') + t.roi_pct.toFixed(2)}%</td>
+                        <td>+${t.peak_pct.toFixed(2)}%</td>
+                        <td><span class="pos-badge pos-badge-flat" style="font-size: 0.65rem;">${t.reason}</span></td>
+                        <td class="mono" style="color: var(--text-dim);">${t.time}</td>
+                    </tr>
+                `;
+            });
+            document.getElementById('trades-tbody').innerHTML = html || '<tr><td colspan="8" style="text-align: center; color: var(--text-dim); padding: 2rem;">Belum ada riwayat trade.</td></tr>';
+        }
+
+        function resetStrategy() {
+            if (!confirm('Apakah Anda yakin ingin me-reset saldo simulasi dan riwayat trade?')) return;
+            posSide = 0; hasPending = false; isLiquidated = false;
+            tradeHistory = [];
+            renderTradesTable();
+            logEvent('STATUS', 'Strategi berhasil di-reset ke kondisi awal.');
+            updatePositionUI(lastPrice);
+        }
+
+        // =========================================================================
+        // BINANCE REAL-TIME WEBSOCKET & WARMUP
+        // =========================================================================
+        async function startEngine() {
+            document.getElementById('stat-symbol-tf').innerText = `${cfg.symbol} ${cfg.timeframe}`;
+            logEvent('INFO', `Memulai warm-up 1000 klines untuk ${cfg.symbol} (${cfg.timeframe})...`);
+
+            try {
+                // Fetch 1000 historical klines directly from Binance Public REST
+                const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${cfg.symbol}&interval=${cfg.timeframe}&limit=1000`;
+                const resp = await fetch(url);
+                const klines = await resp.json();
+
+                if (Array.isArray(klines)) {
+                    closesHistory = [];
+                    trHistory = [];
+                    confirmedSr = null;
+
+                    klines.forEach(k => {
+                        const o = parseFloat(k[1]);
+                        const h = parseFloat(k[2]);
+                        const l = parseFloat(k[3]);
+                        const c = parseFloat(k[4]);
+                        const t = parseInt(k[0]);
+                        lastClosedCandleTime = t;
+                        processClosedCandle(o, h, l, c, t);
+                    });
+
+                    logEvent('INFO', `Warm-up selesai: ${klines.length} klines diproses. S/R dikonfirmasi: ${fmtPx(confirmedSr)}`);
+                }
+            } catch (err) {
+                logEvent('INFO', `Warm-up error: ${err.message}. Mencoba langsung koneksi WebSocket...`);
+            }
+
+            // Connect to Binance Futures Live WebSocket
+            connectWebSocket();
+
+            // Check Testnet Balance if keys present
+            if (cfg.api_key && cfg.api_secret) {
+                verifyTestnetKey();
+            }
+        }
+
+        function connectWebSocket() {
+            if (ws) {
+                try { ws.close(); } catch (e) {}
+            }
+
+            const streamName = `${cfg.symbol.toLowerCase()}@kline_${cfg.timeframe}`;
+            const wsUrl = `wss://fstream.binance.com/ws/${streamName}`;
+            logEvent('INFO', `Menghubungkan ke Binance WebSocket: ${streamName}...`);
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = function() {
+                logEvent('INFO', `WebSocket TERHUBUNG ke Binance. Stream tick aktif.`);
+            };
+
+            ws.onmessage = function(e) {
+                try {
+                    const msg = JSON.parse(e.data);
+                    if (!msg.k) return;
+                    const k = msg.k;
+                    const price = parseFloat(k.c);
+                    const highP = parseFloat(k.h);
+                    const lowP = parseFloat(k.l);
+                    const openP = parseFloat(k.o);
+                    const isClosed = k.x;
+                    const closeTimeMs = parseInt(k.T);
+
+                    expectedBarCloseMs = closeTimeMs;
+                    totalTicks++;
+                    document.getElementById('stat-total-ticks').innerText = totalTicks.toLocaleString();
+                    document.getElementById('badge-server-time').innerText = new Date().toLocaleTimeString();
+
+                    // Price Flash Strobe
+                    const priceEl = document.getElementById('stat-live-price');
+                    const deltaEl = document.getElementById('stat-tick-delta');
+                    const priceCard = document.getElementById('card-price-container');
+                    priceEl.innerText = fmtPx(price);
+
+                    if (lastPrice !== null) {
+                        if (price > lastPrice) {
+                            deltaEl.innerText = '▲ UP TICK';
+                            deltaEl.style.color = 'var(--color-long)';
+                            priceCard.classList.remove('tick-flash-down');
+                            priceCard.classList.add('tick-flash-up');
+                        } else if (price < lastPrice) {
+                            deltaEl.innerText = '▼ DOWN TICK';
+                            deltaEl.style.color = 'var(--color-short)';
+                            priceCard.classList.remove('tick-flash-up');
+                            priceCard.classList.add('tick-flash-down');
+                        }
+                    }
+                    lastPrice = price;
+
+                    // Tick hook for strategy
+                    onStrategyLiveTick(price, highP, lowP);
+
+                    // Candle closed hook
+                    if (isClosed && k.t !== lastClosedCandleTime) {
+                        lastClosedCandleTime = k.t;
+                        processClosedCandle(openP, highP, lowP, price, k.t);
+                    }
+                } catch (err) {
+                    console.error('WS parse error:', err);
+                }
+            };
+
+            ws.onerror = function(err) {
+                console.error('WS Error:', err);
+            };
+
+            ws.onclose = function() {
+                logEvent('INFO', 'Koneksi WebSocket terputus. Mencoba rekoneksi dalam 3 detik...');
+                setTimeout(connectWebSocket, 3000);
+            };
+        }
+
+        // Countdown timer for bar remaining
+        setInterval(() => {
+            if (expectedBarCloseMs > 0) {
+                const remMs = Math.max(0, expectedBarCloseMs - Date.now());
+                const mins = Math.floor(remMs / 60000);
+                const secs = Math.floor((remMs % 60000) / 1000);
+                document.getElementById('badge-countdown').innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}s`;
+            }
+        }, 500);
+
+        function populateForm() {
+            document.getElementById('cfg-api-key').value = cfg.api_key;
+            document.getElementById('cfg-api-secret').value = cfg.api_secret;
+            document.getElementById('cfg-symbol').value = cfg.symbol;
+            document.getElementById('cfg-timeframe').value = cfg.timeframe;
+            document.getElementById('cfg-line-mode').value = cfg.line_mode;
+            document.getElementById('cfg-vol-type').value = cfg.vol_type;
+            document.getElementById('cfg-vol-len').value = cfg.vol_len;
+            document.getElementById('cfg-vol-mult').value = cfg.vol_mult;
+            document.getElementById('cfg-leverage').value = cfg.leverage;
+            document.getElementById('cfg-margin-pct').value = cfg.margin_pct;
+            document.getElementById('cfg-pullback-pct').value = cfg.pullback_pct;
+            document.getElementById('cfg-sl-fixed-pct').value = cfg.sl_fixed_pct;
+            document.getElementById('cfg-trail-act-pct').value = cfg.trail_act_pct;
+            document.getElementById('cfg-trail-cb-pct').value = cfg.trail_cb_pct;
+            document.getElementById('cfg-timeout-bars').value = cfg.timeout_bars;
+        }
+
+        function saveConfig(e) {
+            e.preventDefault();
+            cfg.api_key = document.getElementById('cfg-api-key').value.trim();
+            cfg.api_secret = document.getElementById('cfg-api-secret').value.trim();
+            cfg.symbol = document.getElementById('cfg-symbol').value.toUpperCase().trim();
+            cfg.timeframe = document.getElementById('cfg-timeframe').value;
+            cfg.line_mode = document.getElementById('cfg-line-mode').value;
+            cfg.vol_type = document.getElementById('cfg-vol-type').value;
+            cfg.vol_len = parseInt(document.getElementById('cfg-vol-len').value);
+            cfg.vol_mult = parseFloat(document.getElementById('cfg-vol-mult').value);
+            cfg.leverage = parseInt(document.getElementById('cfg-leverage').value);
+            cfg.margin_pct = parseFloat(document.getElementById('cfg-margin-pct').value);
+            cfg.pullback_pct = parseFloat(document.getElementById('cfg-pullback-pct').value);
+            cfg.sl_fixed_pct = parseFloat(document.getElementById('cfg-sl-fixed-pct').value);
+            cfg.trail_act_pct = parseFloat(document.getElementById('cfg-trail-act-pct').value);
+            cfg.trail_cb_pct = parseFloat(document.getElementById('cfg-trail-cb-pct').value);
+            cfg.timeout_bars = parseInt(document.getElementById('cfg-timeout-bars').value);
+
+            saveConfigToStorage();
+            closeModal();
+            logEvent('INFO', `Konfigurasi disimpan. Merestart engine untuk ${cfg.symbol} (${cfg.timeframe})...`);
+            startEngine();
+        }
+
+        populateForm();
+        updateBotUI(false);
+        updateDashboardBalance();
+        startEngine();
+    </script>
+</body>
+</html>

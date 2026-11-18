@@ -49,15 +49,23 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v1.0.0
-          name: "VTrail Terminal Android APK v1.0.0"
+          tag_name: v1.1.0
+          name: "VTrail Terminal Android APK v1.1.0 (Native Standalone)"
           body: |
-            ## VTrail Binance Futures Terminal - Android APK
+            ## VTrail Binance Futures Terminal - Android APK (Native Standalone)
             
-            Build otomatis via GitHub Actions CI/CD.
+            Versi ini berjalan **100% STANDALONE** langsung di HP Android tanpa perlu PC / remote server!
             
-            ### Cara Menggunakan di Android:
-            1. Download file **`vtrail-terminal.apk`** di bagian Assets di bawah ini.
+            ### Fitur Utama:
+            - **No PC Required**: Engine Pine Script v6, WebSocket, dan Testnet API berjalan langsung di HP.
+            - **Live Binance Tick Stream**: Terhubung langsung ke `wss://fstream.binance.com`.
+            - **Testnet Integration**: Sinkronisasi saldo akun real Binance Testnet via HMAC-SHA256.
+            - **Keep Screen Alive**: Layar tetap aktif saat terminal beroperasi.
+            
+            ### Cara Install:
+            1. Download file **`vtrail-terminal.apk`** di bawah ini.
+            2. Buka dan install di HP Android.
+            3. Aplikasi langsung menyala mandiri tanpa perlu server external.
             2. Buka file APK di HP Android dan lakukan instalasi.
             3. Pastikan server Flask berjalan di PC/VPS (`python3 app.py`).
             4. Buka aplikasi di HP (pastikan satu Wi-Fi dengan PC).

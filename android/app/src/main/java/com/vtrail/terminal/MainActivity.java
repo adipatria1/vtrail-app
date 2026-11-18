@@ -7,6 +7,7 @@ import android.graphics.Bitmap;
 import android.net.http.SslError;
 import android.os.Bundle;
 import android.view.View;
+import android.view.WindowManager;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -27,7 +28,7 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String PREFS_NAME = "VTrailPrefs";
     private static final String KEY_SERVER_URL = "server_url";
-    private static final String DEFAULT_URL = "http://192.168.0.106:5000";
+    public static final String NATIVE_STANDALONE_URL = "file:///android_asset/index.html";
 
     private WebView webView;
     private SwipeRefreshLayout swipeRefresh;
@@ -38,6 +39,8 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        // Keep screen alive while trading terminal is active
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setContentView(R.layout.activity_main);
 
         prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
@@ -51,6 +54,8 @@ public class MainActivity extends AppCompatActivity {
         ws.setDomStorageEnabled(true);
         ws.setDatabaseEnabled(true);
         ws.setAllowFileAccess(true);
+        ws.setAllowFileAccessFromFileURLs(true);
+        ws.setAllowUniversalAccessFromFileURLs(true);
         ws.setLoadsImagesAutomatically(true);
         ws.setUseWideViewPort(true);
         ws.setLoadWithOverviewMode(true);
@@ -74,7 +79,7 @@ public class MainActivity extends AppCompatActivity {
                 super.onReceivedError(view, request, error);
                 swipeRefresh.setRefreshing(false);
                 if (request.isForMainFrame()) {
-                    showErrorDialog("Gagal terhubung ke server: " + getServerUrl());
+                    showErrorDialog("Koneksi bermasalah ke: " + getServerUrl());
                 }
             }
 
@@ -102,7 +107,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private String getServerUrl() {
-        return prefs.getString(KEY_SERVER_URL, DEFAULT_URL);
+        return prefs.getString(KEY_SERVER_URL, NATIVE_STANDALONE_URL);
     }
 
     private void loadServerUrl() {
@@ -112,18 +117,18 @@ public class MainActivity extends AppCompatActivity {
 
     private void showUrlDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(this);
-        builder.setTitle(R.string.change_url);
-        builder.setMessage(R.string.enter_url);
+        builder.setTitle("Mode Aplikasi & URL Server");
+        builder.setMessage("Pilih mode eksekusi bot:\n- Standalone: Berjalan mandiri 100% di HP (tanpa PC)\n- Remote: Terhubung ke server PC lokal/VPS");
 
         final EditText input = new EditText(this);
         input.setText(getServerUrl());
         input.setSingleLine(true);
         builder.setView(input);
 
-        builder.setPositiveButton(R.string.save, (dialog, which) -> {
+        builder.setPositiveButton("Simpan URL", (dialog, which) -> {
             String newUrl = input.getText().toString().trim();
             if (!newUrl.isEmpty()) {
-                if (!newUrl.startsWith("http://") && !newUrl.startsWith("https://")) {
+                if (!newUrl.startsWith("http://") && !newUrl.startsWith("https://") && !newUrl.startsWith("file:///")) {
                     newUrl = "http://" + newUrl;
                 }
                 prefs.edit().putString(KEY_SERVER_URL, newUrl).apply();
@@ -132,15 +137,24 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        builder.setNegativeButton(R.string.cancel, (dialog, which) -> dialog.cancel());
+        builder.setNeutralButton("Reset ke Standalone (HP)", (dialog, which) -> {
+            prefs.edit().putString(KEY_SERVER_URL, NATIVE_STANDALONE_URL).apply();
+            loadServerUrl();
+            Toast.makeText(this, "Mode Standalone HP Aktif (Tanpa PC)", Toast.LENGTH_LONG).show();
+        });
+
+        builder.setNegativeButton("Batal", (dialog, which) -> dialog.cancel());
         builder.show();
     }
 
     private void showErrorDialog(String message) {
         new AlertDialog.Builder(this)
                 .setTitle("Koneksi Gagal")
-                .setMessage(message + "\n\nPastikan PC server menjalankan 'python3 app.py' dan HP berada dalam jaringan Wi-Fi yang sama.")
-                .setPositiveButton("Ubah URL", (dialog, which) -> showUrlDialog())
+                .setMessage(message + "\n\nIngin kembali ke mode Standalone bawaan HP?")
+                .setPositiveButton("Kembali ke Standalone HP", (dialog, which) -> {
+                    prefs.edit().putString(KEY_SERVER_URL, NATIVE_STANDALONE_URL).apply();
+                    loadServerUrl();
+                })
                 .setNegativeButton("Coba Lagi", (dialog, which) -> loadServerUrl())
                 .show();
     }
