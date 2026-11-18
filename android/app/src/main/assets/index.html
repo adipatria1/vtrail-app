@@ -1290,7 +1290,7 @@
 
             try {
                 const ts = Date.now();
-                const query = `timestamp=${ts}`;
+                const query = `timestamp=${ts}&recvWindow=10000`;
                 const signature = await hmacSha256(apiSecret, query);
                 const url = `https://testnet.binancefuture.com/fapi/v2/balance?${query}&signature=${signature}`;
 
@@ -1342,7 +1342,7 @@
 
             try {
                 const ts = Date.now();
-                const query = `symbol=${encodeURIComponent(sym)}&limit=50&timestamp=${ts}`;
+                const query = `symbol=${encodeURIComponent(sym)}&limit=50&recvWindow=10000&timestamp=${ts}`;
                 const signature = await hmacSha256(apiSecret, query);
                 const url = `https://testnet.binancefuture.com/fapi/v1/userTrades?${query}&signature=${signature}`;
 
