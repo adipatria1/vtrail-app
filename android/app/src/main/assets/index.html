@@ -1013,6 +1013,19 @@
 
     <!-- NATIVE STANDALONE JAVASCRIPT ENGINE (100% RUNS ON DEVICE) -->
     <script>
+        window.onerror = function(msg, url, line, col, err) {
+            console.error('JS ERROR:', msg, 'Line:', line, 'Col:', col, err);
+            try {
+                logEvent('ERROR', `JS ERROR: ${msg} [L${line}]`);
+            } catch (e) {}
+        };
+        window.addEventListener('unhandledrejection', function(event) {
+            console.error('PROMISE REJECTION:', event.reason);
+            try {
+                logEvent('ERROR', `REJECTION: ${event.reason && event.reason.message ? event.reason.message : event.reason}`);
+            } catch (e) {}
+        });
+
         const LED_COUNT = 24;
         let ws = null;
         let isBotActive = false;
@@ -1513,7 +1526,6 @@
                 srDirEl.className = 'pos-badge pos-badge-flat';
                 srPctEl.innerText = '0.00%';
                 srPctEl.className = 'font-bold';
-            }
             }
         }
 
@@ -2060,22 +2072,6 @@
             } catch (err) {
                 console.error('WS init error:', err);
             }
-        }
-                        processClosedCandle(openP, highP, lowP, price, k.t);
-                    }
-                } catch (err) {
-                    console.error('WS parse error:', err);
-                }
-            };
-
-            ws.onerror = function(err) {
-                console.error('WS Error:', err);
-            };
-
-            ws.onclose = function() {
-                logEvent('INFO', 'Koneksi WebSocket terputus. Mencoba rekoneksi dalam 3 detik...');
-                setTimeout(connectWebSocket, 3000);
-            };
         }
 
         // Countdown timer for bar remaining

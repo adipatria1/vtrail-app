@@ -49,8 +49,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v1.1.0
-          name: "VTrail Terminal Android APK v1.1.0 (Native Standalone)"
+          tag_name: v1.2.0
+          name: "VTrail Terminal Android APK v1.2.0 (Native Standalone)"
           body: |
             ## VTrail Binance Futures Terminal - Android APK (Native Standalone)
             
