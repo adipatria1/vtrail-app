@@ -1,0 +1,316 @@
+// This work is licensed under a Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0)
+// © Zeiierman / Quant Modified: Volatility Step S/R Line - Pullback Limit & Trailing Stop Only
+
+//@version=6
+indicator('Volatility Step S/R - PTL Trailing Sim', shorttitle = 'VolStep PTL Trail', overlay = true, max_lines_count = 500, max_labels_count = 500)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 1. INPUT PENGATURAN INDIKATOR (STEP S/R)
+// ══════════════════════════════════════════════════════════════════════════════
+grp_ind = '1. Indikator Volatility Step S/R'
+lineMode         = input.string('Anchor', options = ['Anchor', 'Without Anchor'], title = 'Line Mode', group = grp_ind)
+volatilityType   = input.string('Stdev', options = ['Stdev', 'Atr'], title = 'Volatility Type', group = grp_ind)
+volatilityLength = input.int(200, title = 'Lookback Period (L)', minval = 2, group = grp_ind)
+volMult          = input.float(4.0, title = 'Multiplier (M)', minval = 0.1, step = 0.1, group = grp_ind)
+realtimeUpdate   = input.bool(true, title = 'Realtime Update', group = grp_ind)
+
+grp_vis = '2. Pengaturan Visual Garis'
+lineColor  = input.color(#2196f3, title = 'Warna Garis S/R', group = grp_vis)
+lineWidth  = input.int(2, title = 'Ketebalan Garis', minval = 1, maxval = 4, group = grp_vis)
+showLabels = input.bool(true, title = 'Tampilkan Label Entry / Exit di Chart', group = grp_vis)
+showViz    = input.bool(true, title = 'Tampilkan Garis Visual Posisi (Entry / SL / Trail)', group = grp_vis)
+showFill   = input.bool(true, title = 'Warna Zona Risiko (merah) & Profit Terkunci (hijau)', group = grp_vis)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 2. INPUT SIMULASI BINANCE FUTURES CROSS & STRATEGI
+// ══════════════════════════════════════════════════════════════════════════════
+grp_sim = '3. Binance Futures Cross Simulation Settings'
+backtestDays   = input.int(0, title = 'Hari Backtest (0 = Semua Hari di Chart)', minval = 0, step = 1, group = grp_sim)
+initialBalance = input.float(1000.0, title = 'Saldo Awal (USDT)', minval = 10.0, step = 100.0, group = grp_sim)
+leverage       = input.float(15.0, title = 'Leverage Cross (x)', minval = 1.0, maxval = 1250.0, step = 1.0, group = grp_sim)
+marginPct      = input.float(25.0, title = 'Margin Allocation % per Trade', minval = 1.0, maxval = 100.0, step = 5.0, group = grp_sim) / 100.0
+makerFeePct    = input.float(0.02, title = 'Maker Fee % (Limit Fill)', minval = 0.0, step = 0.01, group = grp_sim) / 100.0
+takerFeePct    = input.float(0.05, title = 'Taker Fee % (Market Fill)', minval = 0.0, step = 0.01, group = grp_sim) / 100.0
+mmrPct         = input.float(0.40, title = 'Maintenance Margin Rate (MMR %)', minval = 0.1, step = 0.05, group = grp_sim) / 100.0
+
+grp_strat = '4. Strategi Pullback Limit (M4 Macro) & Trailing Stop'
+pullbackPct = input.float(0.25, title = '[PTL] Diskon Pullback Limit %', minval = 0.05, step = 0.05, group = grp_strat) / 100.0
+slFixedPct  = input.float(1.0, title = '[PTL] Initial Stop Loss %', minval = 0.1, step = 0.1, group = grp_strat) / 100.0
+trailActPct = input.float(0.8, title = '[Trailing] Aktivasi Profit %', minval = 0.2, step = 0.1, group = grp_strat) / 100.0
+trailCbPct  = input.float(0.1, title = '[Trailing] Callback Delta %', minval = 0.1, step = 0.1, group = grp_strat) / 100.0
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 2b. WINDOW BACKTEST & HELPER FORMAT TEKS LABEL
+// ══════════════════════════════════════════════════════════════════════════════
+int  dayMs       = 86400000
+int  windowStart = backtestDays > 0 ? last_bar_time - backtestDays * dayMs : 0
+bool inWindow    = time >= windowStart
+
+fmtPct(float v) =>
+    (v >= 0 ? '+' : '-') + str.tostring(math.abs(v), '0.00') + '%'
+
+fmtPx(float v) =>
+    str.tostring(v, format.mintick)
+
+fmtUsd(float v) =>
+    (v >= 0 ? '+$' : '-$') + str.tostring(math.abs(v), '0.00')
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 3. ENGINE VOLATILITY STEP S/R
+// ══════════════════════════════════════════════════════════════════════════════
+stdevVal = ta.stdev(close, volatilityLength)
+atrVal   = ta.atr(volatilityLength)
+volValue = (volatilityType == 'Stdev' ? stdevVal : atrVal) * volMult
+
+var float confirmedSr = close
+
+float stepLevel = lineMode == 'Anchor' ? close : confirmedSr + (close > confirmedSr ? 1 : -1) * volValue
+bool  isStep    = math.abs(close - confirmedSr) > volValue
+float newLevel  = isStep ? stepLevel : confirmedSr
+
+bool stepTriggered = false
+int  stepDirection = 0 // 1: UP (BUY), -1: DOWN (SELL)
+
+if barstate.isconfirmed
+    if isStep
+        stepDirection := newLevel > confirmedSr ? 1 : -1
+        stepTriggered := true
+    confirmedSr := newLevel
+
+float activeSr = realtimeUpdate ? newLevel : confirmedSr
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 4. RENDERING GARIS S/R
+// ══════════════════════════════════════════════════════════════════════════════
+var line  midLine  = na
+var float curLevel = na
+
+if na(curLevel) or activeSr != curLevel
+    if not na(midLine)
+        line.set_x2(midLine, bar_index)
+    midLine  := line.new(bar_index, activeSr, bar_index + 1, activeSr, color = lineColor, width = lineWidth, style = line.style_solid)
+    curLevel := activeSr
+else
+    if not na(midLine)
+        line.set_x2(midLine, bar_index + 1)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 5. ENGINE SIMULASI BINANCE FUTURES CROSS (PULLBACK LIMIT + TRAILING STOP)
+// ══════════════════════════════════════════════════════════════════════════════
+var float walletBalance = initialBalance
+var bool  isLiquidated  = false
+
+// Status Posisi
+var int   posSide       = 0      // 0: Flat, 1: LONG, -1: SHORT
+var float posQty        = 0.0
+var float posEntryPrice = 0.0
+var float posMarginUsed = 0.0
+var float posSlPrice    = 0.0
+var float posHighest    = 0.0
+var float posLowest     = 0.0
+var bool  posTrailAct   = false
+
+// Pending Limit Order (Dipasang di bar i, dieksekusi di bar i+1)
+var bool  hasPendingOrder = false
+var int   pendingSide     = 0
+var float pendingPrice    = 0.0
+var float pendingSl       = 0.0
+var int   pendingBar      = 0
+
+// Variabel bantu visual & info label
+var float tradeNetAcc = 0.0
+var int   vizSide     = 0
+var int   tradeId     = 0
+var line  pendLine    = na
+bool closedThisBar    = false
+
+// A. EKSEKUSI PENDING ORDER DI AWAL CANDLE BAR INI
+if hasPendingOrder and not isLiquidated
+    if not na(pendLine)
+        line.set_x2(pendLine, bar_index)
+
+    bool  filled    = false
+    float fillPrice = 0.0
+    
+    if pendingSide == 1 and low <= pendingPrice
+        filled    := true
+        fillPrice := math.min(open, pendingPrice)
+    else if pendingSide == -1 and high >= pendingPrice
+        filled    := true
+        fillPrice := math.max(open, pendingPrice)
+        
+    if filled
+        float marginUsed = walletBalance * marginPct
+        if marginUsed > 5.0
+            float notional = marginUsed * leverage
+            float qty      = notional / fillPrice
+            float fee      = notional * makerFeePct // Limit fill = Maker
+            walletBalance := walletBalance - fee
+            
+            posSide       := pendingSide
+            posQty        := qty
+            posEntryPrice := fillPrice
+            posMarginUsed := marginUsed
+            posSlPrice    := pendingSl
+            posHighest    := fillPrice
+            posLowest     := fillPrice
+            posTrailAct   := false
+
+            tradeNetAcc   := -fee
+            vizSide       := pendingSide
+            tradeId       := tradeId + 1
+            
+            if showLabels
+                float  slPctE  = pendingSide * (pendingSl / fillPrice - 1.0) * 100.0
+                float  actPx   = fillPrice * (1.0 + pendingSide * trailActPct)
+                string infoTxt = 'SL ' + fmtPx(pendingSl) + ' (' + fmtPct(slPctE) + ')' +
+                                 '\nAktivasi trail ' + fmtPx(actPx) + ' (' + fmtPct(trailActPct * 100.0) + ')' +
+                                 '\nCallback ' + str.tostring(trailCbPct * 100.0, '0.00') + '% dari puncak'
+                label.new(bar_index, fillPrice, text = (pendingSide == 1 ? 'LONG LIMIT FILLED\n' : 'SHORT LIMIT FILLED\n') + fmtPx(fillPrice) + '\n' + infoTxt, 
+                          color = pendingSide == 1 ? color.green : color.red, textcolor = color.white, 
+                          style = pendingSide == 1 ? label.style_label_up : label.style_label_down, size = size.small)
+        hasPendingOrder := false
+    else if bar_index - pendingBar > 48 // Expire limit order jika tidak terisi > 48 candle
+        if not na(pendLine)
+            line.set_color(pendLine, color.gray)
+        if showLabels
+            label.new(bar_index, pendingPrice, text = 'LIMIT HANGUS\n(tidak tersentuh 48 candle)', color = color.gray, textcolor = color.white,
+                      style = pendingSide == 1 ? label.style_label_up : label.style_label_down, size = size.small)
+        hasPendingOrder := false
+
+// B. PENGECEKAN LIKUIDASI BINANCE CROSS MARGIN (MMR)
+if posSide != 0 and not isLiquidated
+    float worstPrice        = posSide == 1 ? low : high
+    float unrealizedWorst   = posSide == 1 ? posQty * (worstPrice - posEntryPrice) : posQty * (posEntryPrice - worstPrice)
+    float maintenanceMargin = (posQty * worstPrice) * mmrPct
+    float marginBalance     = walletBalance + unrealizedWorst
+    
+    if marginBalance <= maintenanceMargin
+        isLiquidated  := true
+        walletBalance := 0.0
+        posSide       := 0
+        closedThisBar := true
+        if showLabels
+            label.new(bar_index, worstPrice, text = 'LIQUIDATED (Margin Call)', color = color.purple, textcolor = color.white, size = size.normal)
+
+// C. MANAJEMEN EXIT POSISI (TRAILING STOP)
+if posSide != 0 and not isLiquidated
+    if high > posHighest
+        posHighest := high
+    if low < posLowest
+        posLowest := low
+        
+    bool   closeTrade = false
+    float  exitPrice  = 0.0
+    string exitReason = ''
+    
+    if posSide == 1 // LONG
+        bool trailJustOn = false
+        if not posTrailAct and posHighest >= posEntryPrice * (1.0 + trailActPct)
+            posTrailAct := true
+            trailJustOn := true
+        if posTrailAct
+            float dynSl = posHighest * (1.0 - trailCbPct)
+            if dynSl > posSlPrice
+                posSlPrice := dynSl
+        if trailJustOn and showLabels
+            label.new(bar_index, posSlPrice, text = 'TRAIL ON\nSL ' + fmtPx(posSlPrice) + '\n(' + fmtPct(posSide * (posSlPrice / posEntryPrice - 1.0) * 100.0) + ' dari entry)',
+                      color = color.orange, textcolor = color.black, style = label.style_label_up, size = size.small)
+        if low <= posSlPrice
+            closeTrade := true
+            exitPrice  := posSlPrice
+            exitReason := posTrailAct ? 'Trail' : 'SL'
+    else // SHORT
+        bool trailJustOn = false
+        if not posTrailAct and posLowest <= posEntryPrice * (1.0 - trailActPct)
+            posTrailAct := true
+            trailJustOn := true
+        if posTrailAct
+            float dynSl = posLowest * (1.0 + trailCbPct)
+            if dynSl < posSlPrice
+                posSlPrice := dynSl
+        if trailJustOn and showLabels
+            label.new(bar_index, posSlPrice, text = 'TRAIL ON\nSL ' + fmtPx(posSlPrice) + '\n(' + fmtPct(posSide * (posSlPrice / posEntryPrice - 1.0) * 100.0) + ' dari entry)',
+                      color = color.orange, textcolor = color.black, style = label.style_label_down, size = size.small)
+        if high >= posSlPrice
+            closeTrade := true
+            exitPrice  := posSlPrice
+            exitReason := posTrailAct ? 'Trail' : 'SL'
+
+    if closeTrade
+        float pnl    = posSide == 1 ? posQty * (exitPrice - posEntryPrice) : posQty * (posEntryPrice - exitPrice)
+        float fee    = (posQty * exitPrice) * takerFeePct
+        float netPnl = pnl - fee
+        walletBalance := walletBalance + netPnl
+        tradeNetAcc   := tradeNetAcc + netPnl
+            
+        if showLabels
+            float  movePct = posSide * (exitPrice / posEntryPrice - 1.0) * 100.0
+            float  mfePct  = posSide == 1 ? (posHighest / posEntryPrice - 1.0) * 100.0 : (1.0 - posLowest / posEntryPrice) * 100.0
+            float  roiPct  = tradeNetAcc / posMarginUsed * 100.0
+            color  lblCol  = tradeNetAcc > 0 ? color.teal : color.maroon
+            string lblTxt  = exitReason + ' ' + fmtPct(movePct) + ' (harga)\n' + fmtUsd(tradeNetAcc) + ' | ROI ' + fmtPct(roiPct) + '\nPuncak ' + fmtPct(mfePct)
+            label.new(bar_index, exitPrice, text = lblTxt,
+                      color = lblCol, textcolor = color.white, style = posSide == 1 ? label.style_label_down : label.style_label_up, size = size.small)
+        closedThisBar := true
+        posSide       := 0
+
+// D. PENERIMAAN SINYAL BARU DI AKHIR CANDLE CONFIRMED (PULLBACK TREND LIMIT M4 MACRO)
+if barstate.isconfirmed and inWindow and stepTriggered and posSide == 0 and not hasPendingOrder and not isLiquidated
+    if stepDirection == 1 // BUY lonjakan -> Pasang LONG Limit di bawah close
+        hasPendingOrder := true
+        pendingSide     := 1
+        pendingPrice    := close * (1.0 - pullbackPct)
+        pendingSl       := pendingPrice * (1.0 - slFixedPct)
+        pendingBar      := bar_index
+    else if stepDirection == -1 // SELL lonjakan -> Pasang SHORT Limit di atas close
+        hasPendingOrder := true
+        pendingSide     := -1
+        pendingPrice    := close * (1.0 + pullbackPct)
+        pendingSl       := pendingPrice * (1.0 + slFixedPct)
+        pendingBar      := bar_index
+
+// Gambar garis & label limit order saat order baru dipasang
+if hasPendingOrder and pendingBar == bar_index and showViz
+    pendLine := line.new(bar_index, pendingPrice, bar_index + 1, pendingPrice, color = color.yellow, width = 2, style = line.style_dashed)
+    if showLabels
+        label.new(bar_index, pendingPrice, text = 'PASANG LIMIT ' + (pendingSide == 1 ? 'LONG' : 'SHORT') + '\n' + fmtPx(pendingPrice) + '\nJarak dari close ' + str.tostring(math.abs(pendingPrice / close - 1.0) * 100.0, '0.00') + '%\n(tunggu harga pullback, max 48 candle)',
+                  color = color.new(color.yellow, 10), textcolor = color.black,
+                  style = pendingSide == 1 ? label.style_label_up : label.style_label_down, size = size.small)
+
+// ══════════════════════════════════════════════════════════════════════════════
+// 6. VISUAL GARIS POSISI: ENTRY / SL & TRAIL / AKTIVASI TRAIL / PUNCAK
+// ══════════════════════════════════════════════════════════════════════════════
+bool vizOn = showViz and (posSide != 0 or closedThisBar)
+bool parA  = tradeId % 2 == 0
+
+float actLvl = posEntryPrice * (1.0 + vizSide * trailActPct)
+float peakLv = vizSide == 1 ? posHighest : posLowest
+color slCol  = posTrailAct ? color.orange : color.red
+
+bool  slLocked = vizSide == 1 ? posSlPrice >= posEntryPrice : posSlPrice <= posEntryPrice
+color zoneCol  = not showFill ? color.new(color.gray, 100) : slLocked ? color.new(color.green, 80) : color.new(color.red, 85)
+
+// Trade genap (A)
+float eA  = vizOn and parA ? posEntryPrice : na
+float sA  = vizOn and parA ? posSlPrice : na
+float aA  = vizOn and parA ? actLvl : na
+float pkA = vizOn and parA ? peakLv : na
+
+// Trade ganjil (B)
+float eB  = vizOn and not parA ? posEntryPrice : na
+float sB  = vizOn and not parA ? posSlPrice : na
+float aB  = vizOn and not parA ? actLvl : na
+float pkB = vizOn and not parA ? peakLv : na
+
+pEA = plot(eA,  'Entry',          color = color.yellow, style = plot.style_linebr,  linewidth = 2)
+pSA = plot(sA,  'SL / Trail',     color = slCol,        style = plot.style_linebr,  linewidth = 2)
+plot(aA,        'Aktivasi Trail', color = color.aqua,   style = plot.style_circles, linewidth = 1)
+plot(pkA,       'Puncak',         color = color.gray,   style = plot.style_linebr,  linewidth = 1)
+fill(pEA, pSA, color = zoneCol)
+
+pEB = plot(eB,  'Entry (2)',          color = color.yellow, style = plot.style_linebr,  linewidth = 2)
+pSB = plot(sB,  'SL / Trail (2)',     color = slCol,        style = plot.style_linebr,  linewidth = 2)
+plot(aB,        'Aktivasi Trail (2)', color = color.aqua,   style = plot.style_circles, linewidth = 1)
+plot(pkB,       'Puncak (2)',         color = color.gray,   style = plot.style_linebr,  linewidth = 1)
+fill(pEB, pSB, color = zoneCol)

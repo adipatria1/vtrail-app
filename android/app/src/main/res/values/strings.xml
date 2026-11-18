@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">VTrail Terminal</string>
+    <string name="change_url">Ubah URL Server</string>
+    <string name="enter_url">Masukkan URL Server Terminal (contoh: http://192.168.0.106:5000):</string>
+    <string name="save">Simpan &amp; Muat Ulang</string>
+    <string name="cancel">Batal</string>
+</resources>

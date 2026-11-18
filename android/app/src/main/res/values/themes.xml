@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.VTrailTerminal" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:statusBarColor">#0F131A</item>
+        <item name="android:navigationBarColor">#080A0E</item>
+        <item name="android:windowBackground">#080A0E</item>
+    </style>
+</resources>

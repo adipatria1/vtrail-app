@@ -1,0 +1,69 @@
+name: Build Android APK & Release
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: 8.4
+
+      - name: Build Debug APK
+        working-directory: android
+        run: |
+          gradle assembleDebug --stacktrace
+
+      - name: Stage APK for Release
+        run: |
+          mkdir -p release-apk
+          cp android/app/build/outputs/apk/debug/app-debug.apk release-apk/vtrail-terminal.apk
+
+      - name: Upload APK as Workflow Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vtrail-terminal-apk
+          path: release-apk/vtrail-terminal.apk
+          retention-days: 30
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        with:
+          tag_name: v1.0.0
+          name: "VTrail Terminal Android APK v1.0.0"
+          body: |
+            ## VTrail Binance Futures Terminal - Android APK
+            
+            Build otomatis via GitHub Actions CI/CD.
+            
+            ### Cara Menggunakan di Android:
+            1. Download file **`vtrail-terminal.apk`** di bagian Assets di bawah ini.
+            2. Buka file APK di HP Android dan lakukan instalasi.
+            3. Pastikan server Flask berjalan di PC/VPS (`python3 app.py`).
+            4. Buka aplikasi di HP (pastikan satu Wi-Fi dengan PC).
+            5. Jika IP server berbeda, tekan tombol pengaturan untuk mengubah IP/URL.
+          draft: false
+          prerelease: false
+          files: release-apk/vtrail-terminal.apk
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
