@@ -132,8 +132,23 @@ class FuturesStrategyEngine:
         self.trade_history.clear()
         self.log("RESET", f"Engine di-reset. Saldo dikembalikan ke ${self.wallet_balance:,.2f}")
 
+    def reset_position_state(self):
+        """Membersihkan posisi dan pending order agar bot 100% FLAT dan hanya menunggu S/R baru."""
+        self.pos_side = 0
+        self.pos_qty = 0.0
+        self.pos_entry_price = 0.0
+        self.pos_margin_used = 0.0
+        self.pos_sl_price = 0.0
+        self.pos_highest = 0.0
+        self.pos_lowest = 0.0
+        self.pos_trail_act = False
+        self.is_liquidated = False
+        self.has_pending_order = False
+
     def set_bot_active(self, active: bool):
         self.is_bot_active = bool(active)
+        if self.is_bot_active:
+            self.reset_position_state()
         status_txt = "BERJALAN (ACTIVE)" if self.is_bot_active else "DIHENTIKAN (STOPPED)"
         self.log("STATUS", f"Bot {status_txt}. " + ("Mencari sinyal baru..." if self.is_bot_active else "Tidak akan memasang order baru."))
 

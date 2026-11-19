@@ -49,17 +49,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v1.2.1
-          name: "VTrail Terminal Android APK v1.2.1 (Standby on Startup & Active on StartBot)"
+          tag_name: v1.2.2
+          name: "VTrail Terminal Android APK v1.2.2 (Fix Ghost Warmup Trade & Flat Startup)"
           body: |
-            ## VTrail Binance Futures Terminal - Android APK v1.2.1 (Native Standalone)
+            ## VTrail Binance Futures Terminal - Android APK v1.2.2 (Native Standalone)
             
             Versi ini berjalan **100% STANDALONE** langsung di HP Android tanpa perlu PC / remote server!
             
-            ### Fitur & Pembaruan v1.2.1:
-            - **Standby on App Launch**: Saat aplikasi dibuka, live price tick dan kalkulasi Confirmed S/R dalam kondisi SIAGA (STANDBY).
-            - **Engage Bot Activation**: Live WebSocket tick stream, kalkulasi S/R presisi, dan trailing stop baru aktif setelah menekan tombol **ENGAGE BOT**.
-            - **Clean Disengage**: Menekan tombol **DISENGAGE BOT** menghentikan streaming WebSocket, polling REST, dan mengembalikan terminal ke status STANDBY.
+            ### Fitur & Perbaikan v1.2.2:
+            - **No Ghost Warmup Trades**: Warm-up 1500 klines murni untuk kalibrasi S/R & ATR matematis, tidak mengeksekusi order/trade masa lalu.
+            - **Strict Flat Startup**: Bot selalu mulai dalam kondisi 100% FLAT (posisi kosong, tidak ada pending order).
+            - **Wait for NEW S/R Breakout**: Bot hanya menempatkan order Pullback Limit jika terjadi lonjakan/breakout S/R BARU pada candle yang tutup setelah bot diaktifkan.
             - **Keep Screen Alive**: Layar tetap aktif saat terminal beroperasi.
             
             ### Cara Install:

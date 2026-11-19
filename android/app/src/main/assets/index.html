@@ -1292,11 +1292,24 @@
             isBotActive = !isBotActive;
             updateBotUI(isBotActive);
             if (isBotActive) {
+                // Pastikan state posisi bersih dan 100% FLAT
+                posSide = 0;
+                hasPending = false;
+                isLiquidated = false;
+                posQty = 0.0;
+                posEntryPrice = 0.0;
+                posMarginUsed = 0.0;
+                posSlPrice = 0.0;
+                posHighest = 0.0;
+                posLowest = 0.0;
+                posTrailAct = false;
+                updatePositionUI(null);
+
                 document.getElementById('stat-tick-delta').innerText = 'WARM-UP (1500 BARS)...';
                 document.getElementById('stat-tick-delta').style.color = 'var(--binance-gold)';
                 logEvent('STATUS', 'Bot BERJALAN (ACTIVE). Memulai warm-up 1500 klines & streaming Binance...');
                 await startEngine(true);
-                logEvent('STATUS', 'Pemindaian sinyal S/R diaktifkan.');
+                logEvent('STATUS', 'Pemindaian sinyal S/R diaktifkan (Menunggu Breakout S/R Baru).');
             } else {
                 stopEngine();
             }
@@ -1532,7 +1545,7 @@
             return rawVol !== null ? rawVol * cfg.vol_mult : null;
         }
 
-        function processClosedCandle(openP, highP, lowP, closeP, candleTime) {
+        function processClosedCandle(openP, highP, lowP, closeP, candleTime, isWarmup = false) {
             if (confirmedSr === null) {
                 confirmedSr = closeP;
             }
@@ -1557,8 +1570,11 @@
                 }
             }
 
-            // Strategy Candle Close Hook
-            onStrategyCandleClose(openP, highP, lowP, closeP, isStep, stepDir);
+            // Strategy Candle Close Hook: JANGAN PERNAH jalankan strategi pada klines warmup historis!
+            // Bot HANYA memproses sinyal jika bar close terjadi saat LIVE streaming (bukan warmup)!
+            if (!isWarmup && isBotActive) {
+                onStrategyCandleClose(openP, highP, lowP, closeP, isStep, stepDir);
+            }
             updateSrDisplay(closeP);
         }
 
@@ -1984,8 +2000,22 @@
                         const c = parseFloat(k[4]);
                         const t = parseInt(k[0]);
                         lastClosedCandleTime = t;
-                        processClosedCandle(o, h, l, c, t);
+                        processClosedCandle(o, h, l, c, t, true); // isWarmup = true (indikator murni, tidak ada order)
                     });
+
+                    // Pastikan state posisi 100% FLAT setelah warmup
+                    // Bot TIDAK BOLEH masuk posisi dari data masa lalu!
+                    // Bot HANYA menunggu sinyal breakout S/R BARU yang terjadi setelah bot aktif!
+                    posSide = 0;
+                    hasPending = false;
+                    isLiquidated = false;
+                    posQty = 0.0;
+                    posEntryPrice = 0.0;
+                    posMarginUsed = 0.0;
+                    posSlPrice = 0.0;
+                    posHighest = 0.0;
+                    posLowest = 0.0;
+                    posTrailAct = false;
 
                     // Langsung set harga live dari candle terakhir
                     const lastK = klines[klines.length - 1];
@@ -1996,8 +2026,9 @@
                     document.getElementById('stat-tick-delta').style.color = 'var(--binance-gold)';
 
                     const trendTxt = curDir ? `${curDir} (${(curPct || 0).toFixed(2)}%)` : 'FLAT';
-                    logEvent('INFO', `Warm-up selesai: ${klines.length} klines diproses. S/R: ${fmtPx(confirmedSr)} [${trendTxt}]`);
+                    logEvent('INFO', `Warm-up selesai: ${klines.length} klines diproses. S/R Baseline: ${fmtPx(confirmedSr)} [${trendTxt}]`);
                     updateSrDisplay(lastPx);
+                    updatePositionUI(lastPx);
                 }
             } catch (err) {
                 logEvent('INFO', `Warm-up error: ${err.message}. Mencoba koneksi langsung...`);

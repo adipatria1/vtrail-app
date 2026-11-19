@@ -211,6 +211,7 @@ class VolStepEngine:
         open_time: int = None,
         close_time: int = None,
         interval_ms: int = None,
+        is_warmup: bool = False,
     ):
         """
         Mengunci candle yang sudah resmi tutup (dari WSS x=True atau Fast REST Trigger).
@@ -294,7 +295,7 @@ class VolStepEngine:
             self.next_sr_price = None
             self.next_sr_pct = None
 
-        if callable(self.on_candle_close):
+        if not is_warmup and callable(self.on_candle_close):
             try:
                 self.on_candle_close(self, open_p, high_p, low_p, close_p, is_step, step_dir, open_time, close_time)
             except Exception:
@@ -461,6 +462,7 @@ def initialize_engine_from_klines(engine: VolStepEngine, klines: list, interval:
             open_time=int(k[0]),
             close_time=int(k[6]),
             interval_ms=interval_ms,
+            is_warmup=True,
         )
 
     last_k = klines[-1]
@@ -481,6 +483,7 @@ def initialize_engine_from_klines(engine: VolStepEngine, klines: list, interval:
             open_time=open_time,
             close_time=close_time,
             interval_ms=interval_ms,
+            is_warmup=True,
         )
     else:
         engine.update_live_tick(

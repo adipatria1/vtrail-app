@@ -164,7 +164,7 @@ class AppManager:
                 length=int(self.config["vol_len"]),
                 vol_mult=float(self.config["vol_mult"]),
             )
-            self.vol_engine.on_candle_close = self._handle_candle_close
+            # Hubungkan live tick hook (on_candle_close HANYA disambungkan setelah warmup selesai)
             self.vol_engine.on_live_tick = self._handle_live_tick
 
             # Tarik 1500 klines historis resmi dari Binance Futures
@@ -185,6 +185,7 @@ class AppManager:
                         open_time=int(k[0]),
                         close_time=int(k[6]),
                         interval_ms=interval_ms,
+                        is_warmup=True,
                     )
                 if klines:
                     last_k = klines[-1]
@@ -199,6 +200,7 @@ class AppManager:
                             open_time=int(last_k[0]),
                             close_time=close_t,
                             interval_ms=interval_ms,
+                            is_warmup=True,
                         )
                     else:
                         self.vol_engine.update_live_tick(
@@ -211,6 +213,13 @@ class AppManager:
                             raw_price_str=str(last_k[4]),
                             interval_ms=interval_ms,
                         )
+
+                # Sambungkan on_candle_close HANYA untuk candle baru yang close setelah start bot
+                self.vol_engine.on_candle_close = self._handle_candle_close
+
+                # Pastikan posisi strategi 100% FLAT (tidak ada trade masuk dari data masa lalu)
+                if self.strat_engine:
+                    self.strat_engine.reset_position_state()
                 logger.info(f"[WARMUP START BOT] {len(klines)} klines berhasil dimuat untuk {sym}. S/R: {self.vol_engine.confirmed_sr} (Trend: {self.vol_engine.cur_dir})")
                 if self.strat_engine:
                     trend_txt = f"{self.vol_engine.cur_dir or 'FLAT'} ({self.vol_engine.cur_pct:+.2f}%)" if self.vol_engine.cur_pct is not None else "FLAT"
@@ -325,6 +334,7 @@ async def async_worker_routine():
                                 open_time=int(k[0]),
                                 close_time=int(k[6]),
                                 interval_ms=interval_ms,
+                                is_warmup=True,
                             )
                         if klines:
                             last_k = klines[-1]
@@ -339,6 +349,7 @@ async def async_worker_routine():
                                     open_time=int(last_k[0]),
                                     close_time=close_t,
                                     interval_ms=interval_ms,
+                                    is_warmup=True,
                                 )
                             else:
                                 engine.update_live_tick(
