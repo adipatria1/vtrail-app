@@ -284,8 +284,12 @@ async def async_worker_routine():
                 sym = manager.config["symbol"]
                 interval = manager.config["timeframe"]
                 engine = manager.vol_engine
+                strat = manager.strat_engine
+                is_active = strat and strat.is_bot_active
 
-            if not engine:
+            if not engine or not is_active:
+                manager.worker_active = False
+                VSTEP_STATE["mode"] = "STANDBY"
                 await asyncio.sleep(0.5)
                 continue
 
@@ -535,6 +539,8 @@ def get_state():
         if not eng or not strat:
             return jsonify({"status": "initializing"})
 
+        is_active = strat.is_bot_active
+
         now_ms = get_binance_now_ms()
         interval_ms = INTERVAL_MS_MAP.get(cfg["timeframe"], 60_000)
         expected_open = (now_ms // interval_ms) * interval_ms
@@ -544,11 +550,11 @@ def get_state():
         mins, secs = divmod(rem_sec, 60)
         countdown_str = f"{mins:02d}:{secs:02d}s"
 
-        strat_state = strat.get_dashboard_state(eng.live_close)
+        strat_state = strat.get_dashboard_state(eng.live_close if is_active else 0.0)
 
         # Candlestick summary untuk mini chart
-        candles = list(manager.candle_history)
-        if eng.live_close is not None:
+        candles = list(manager.candle_history) if is_active else []
+        if is_active and eng.live_close is not None:
             candles.append(
                 {
                     "time": "NOW",
@@ -566,30 +572,30 @@ def get_state():
                 "status": "online",
                 "config": cfg,
                 "server_time": datetime.fromtimestamp(now_ms / 1000.0).strftime("%H:%M:%S"),
-                "countdown": countdown_str,
-                "mode": VSTEP_STATE.get("mode", "INIT"),
-                "total_updates": VSTEP_STATE.get("total_updates", 0),
+                "countdown": countdown_str if is_active else "STANDBY",
+                "mode": VSTEP_STATE.get("mode", "INIT") if is_active else "STANDBY",
+                "total_updates": VSTEP_STATE.get("total_updates", 0) if is_active else 0,
                 "market": {
                     "symbol": cfg["symbol"],
                     "timeframe": cfg["timeframe"],
-                    "price": eng.live_close,
-                    "price_str": eng.fmt(eng.live_close),
-                    "tick_dir": eng.tick_dir,
-                    "open": eng.live_open,
-                    "high": eng.live_high,
-                    "low": eng.live_low,
+                    "price": eng.live_close if is_active else None,
+                    "price_str": eng.fmt(eng.live_close) if is_active else "--",
+                    "tick_dir": eng.tick_dir if is_active else 0,
+                    "open": eng.live_open if is_active else None,
+                    "high": eng.live_high if is_active else None,
+                    "low": eng.live_low if is_active else None,
                 },
                 "indicator": {
-                    "confirmed_sr": eng.confirmed_sr,
-                    "confirmed_sr_str": eng.fmt(eng.confirmed_sr),
-                    "cur_level": eng.cur_level,
-                    "cur_pct": eng.cur_pct,
-                    "cur_dir": eng.cur_dir,
-                    "next_sr_active": eng.next_sr_active,
-                    "next_sr_dir": eng.next_sr_dir,
-                    "next_sr_price": eng.next_sr_price,
-                    "next_sr_price_str": eng.fmt(eng.next_sr_price),
-                    "next_sr_pct": eng.next_sr_pct,
+                    "confirmed_sr": eng.confirmed_sr if is_active else None,
+                    "confirmed_sr_str": eng.fmt(eng.confirmed_sr) if is_active else "--",
+                    "cur_level": eng.cur_level if is_active else None,
+                    "cur_pct": eng.cur_pct if is_active else None,
+                    "cur_dir": eng.cur_dir if is_active else None,
+                    "next_sr_active": eng.next_sr_active if is_active else False,
+                    "next_sr_dir": eng.next_sr_dir if is_active else None,
+                    "next_sr_price": eng.next_sr_price if is_active else None,
+                    "next_sr_price_str": eng.fmt(eng.next_sr_price) if is_active else "--",
+                    "next_sr_pct": eng.next_sr_pct if is_active else None,
                     "line_mode": eng.line_mode,
                     "vol_type": eng.vol_type,
                     "vol_len": eng.length,
@@ -786,6 +792,12 @@ def toggle_bot():
             })
         else:
             manager.strat_engine.set_bot_active(False)
+            if manager.async_loop and manager.async_loop.is_running():
+                for t in manager.running_tasks:
+                    manager.async_loop.call_soon_threadsafe(t.cancel)
+            manager.running_tasks = []
+            manager.worker_active = False
+            VSTEP_STATE["mode"] = "STANDBY"
             return jsonify({
                 "success": True,
                 "is_bot_active": False,
@@ -808,6 +820,8 @@ def sse_stream():
                     if not eng or not strat:
                         continue
 
+                    is_active = strat.is_bot_active
+
                     now_ms = get_binance_now_ms()
                     interval_ms = INTERVAL_MS_MAP.get(cfg["timeframe"], 60_000)
                     expected_open = (now_ms // interval_ms) * interval_ms
@@ -816,23 +830,24 @@ def sse_stream():
                     mins, secs = divmod(int(rem_ms / 1000), 60)
                     countdown_str = f"{mins:02d}:{secs:02d}s"
 
-                    strat_state = strat.get_dashboard_state(eng.live_close)
+                    strat_state = strat.get_dashboard_state(eng.live_close if is_active else 0.0)
 
                     data = {
+                        "is_bot_active": is_active,
                         "server_time": datetime.fromtimestamp(now_ms / 1000.0).strftime("%H:%M:%S"),
-                        "countdown": countdown_str,
-                        "price": eng.live_close,
-                        "price_str": eng.fmt(eng.live_close),
-                        "tick_dir": eng.tick_dir,
-                        "confirmed_sr": eng.confirmed_sr,
-                        "confirmed_sr_str": eng.fmt(eng.confirmed_sr),
-                        "cur_pct": eng.cur_pct,
-                        "cur_dir": eng.cur_dir,
-                        "next_sr_active": eng.next_sr_active,
-                        "next_sr_dir": eng.next_sr_dir,
-                        "next_sr_price": eng.next_sr_price,
-                        "next_sr_price_str": eng.fmt(eng.next_sr_price),
-                        "next_sr_pct": eng.next_sr_pct,
+                        "countdown": countdown_str if is_active else "STANDBY",
+                        "price": eng.live_close if is_active else None,
+                        "price_str": eng.fmt(eng.live_close) if is_active else "--",
+                        "tick_dir": eng.tick_dir if is_active else 0,
+                        "confirmed_sr": eng.confirmed_sr if is_active else None,
+                        "confirmed_sr_str": eng.fmt(eng.confirmed_sr) if is_active else "--",
+                        "cur_pct": eng.cur_pct if is_active else None,
+                        "cur_dir": eng.cur_dir if is_active else None,
+                        "next_sr_active": eng.next_sr_active if is_active else False,
+                        "next_sr_dir": eng.next_sr_dir if is_active else None,
+                        "next_sr_price": eng.next_sr_price if is_active else None,
+                        "next_sr_price_str": eng.fmt(eng.next_sr_price) if is_active else "--",
+                        "next_sr_pct": eng.next_sr_pct if is_active else None,
                         "strategy": strat_state,
                         "testnet": {
                             "connected": manager.testnet_connected,

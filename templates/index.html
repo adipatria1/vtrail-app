@@ -1478,37 +1478,60 @@
             const priceCard = document.getElementById('card-price-container');
             const curPx = m.price;
 
-            priceEl.innerText = m.price_str || '-';
-            if (lastPrice !== null && curPx !== null) {
-                if (curPx > lastPrice) {
-                    deltaEl.innerText = '▲ UP TICK';
-                    deltaEl.style.color = 'var(--color-long)';
-                    priceCard.classList.remove('tick-flash-down');
-                    priceCard.classList.add('tick-flash-up');
-                } else if (curPx < lastPrice) {
-                    deltaEl.innerText = '▼ DOWN TICK';
-                    deltaEl.style.color = 'var(--color-short)';
-                    priceCard.classList.remove('tick-flash-up');
-                    priceCard.classList.add('tick-flash-down');
+            if (!isBotActive || curPx === null || curPx === undefined) {
+                priceEl.innerText = '--';
+                deltaEl.innerText = 'STANDBY (TEKAN ENGAGE BOT)';
+                deltaEl.style.color = 'var(--text-muted)';
+                priceCard.classList.remove('tick-flash-up', 'tick-flash-down');
+                document.getElementById('stat-total-ticks').innerText = '0';
+                lastPrice = null;
+            } else {
+                priceEl.innerText = m.price_str || '-';
+                if (lastPrice !== null && curPx !== null) {
+                    if (curPx > lastPrice) {
+                        deltaEl.innerText = '▲ UP TICK';
+                        deltaEl.style.color = 'var(--color-long)';
+                        priceCard.classList.remove('tick-flash-down');
+                        priceCard.classList.add('tick-flash-up');
+                    } else if (curPx < lastPrice) {
+                        deltaEl.innerText = '▼ DOWN TICK';
+                        deltaEl.style.color = 'var(--color-short)';
+                        priceCard.classList.remove('tick-flash-up');
+                        priceCard.classList.add('tick-flash-down');
+                    }
+                } else {
+                    deltaEl.innerText = 'LIVE SYNC';
+                    deltaEl.style.color = 'var(--binance-gold)';
                 }
+                lastPrice = curPx;
+                document.getElementById('stat-total-ticks').innerText = (data.total_updates || 0).toLocaleString();
             }
-            lastPrice = curPx;
-            document.getElementById('stat-total-ticks').innerText = (data.total_updates || 0).toLocaleString();
 
             // 3. Confirmed S/R
-            document.getElementById('stat-sr-confirmed').innerText = ind.confirmed_sr_str || '-';
+            const srEl = document.getElementById('stat-sr-confirmed');
             const srDirEl = document.getElementById('stat-sr-dir-badge');
             const srPctEl = document.getElementById('stat-sr-pct');
-            if (ind.cur_pct !== null && ind.cur_pct !== undefined) {
-                const isLong = ind.cur_pct >= 0;
-                srDirEl.innerText = isLong ? 'BULL STEP' : 'BEAR STEP';
-                srDirEl.className = 'pos-badge ' + (isLong ? 'pos-badge-long' : 'pos-badge-short');
-                srPctEl.innerText = (isLong ? '+' : '') + ind.cur_pct.toFixed(2) + '%';
-                srPctEl.className = 'font-bold ' + (isLong ? 'color-green' : 'color-red');
-            } else {
-                srDirEl.innerText = 'FLAT';
+
+            if (!isBotActive || !ind.confirmed_sr_str || ind.confirmed_sr_str === '--' || ind.confirmed_sr === null) {
+                srEl.innerText = '--';
+                srDirEl.innerText = 'STANDBY';
                 srDirEl.className = 'pos-badge pos-badge-flat';
                 srPctEl.innerText = '0.00%';
+                srPctEl.className = 'font-bold';
+            } else {
+                srEl.innerText = ind.confirmed_sr_str || '-';
+                if (ind.cur_pct !== null && ind.cur_pct !== undefined) {
+                    const isLong = ind.cur_pct >= 0;
+                    srDirEl.innerText = isLong ? 'BULL STEP' : 'BEAR STEP';
+                    srDirEl.className = 'pos-badge ' + (isLong ? 'pos-badge-long' : 'pos-badge-short');
+                    srPctEl.innerText = (isLong ? '+' : '') + ind.cur_pct.toFixed(2) + '%';
+                    srPctEl.className = 'font-bold ' + (isLong ? 'color-green' : 'color-red');
+                } else {
+                    srDirEl.innerText = 'FLAT';
+                    srDirEl.className = 'pos-badge pos-badge-flat';
+                    srPctEl.innerText = '0.00%';
+                    srPctEl.className = 'font-bold';
+                }
             }
 
             // 4. Next S/R Breakout Candidate
@@ -1516,7 +1539,7 @@
             const nextPxEl = document.getElementById('stat-next-price');
             const nextDescEl = document.getElementById('stat-next-desc');
 
-            if (ind.next_sr_active) {
+            if (isBotActive && ind.next_sr_active) {
                 const isLong = ind.next_sr_dir === 'LONG';
                 nextStatEl.innerText = isLong ? 'BUY TRIGGER' : 'SELL TRIGGER';
                 nextStatEl.className = 'pos-badge ' + (isLong ? 'pos-badge-long' : 'pos-badge-short');
@@ -1528,7 +1551,7 @@
                 nextStatEl.className = 'pos-badge pos-badge-flat';
                 nextPxEl.innerText = '-';
                 nextPxEl.className = 'metric-value mono';
-                nextDescEl.innerText = 'Ambang volatilitas stabil';
+                nextDescEl.innerText = isBotActive ? 'Ambang volatilitas stabil' : 'Bot Standby (Tekan Engage Bot)';
             }
 
             // 5. Position & Trailing Monitor

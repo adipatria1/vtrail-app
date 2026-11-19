@@ -1238,15 +1238,67 @@
             document.getElementById('logs-container').innerHTML = '<div class="log-entry"><span class="log-time">' + new Date().toLocaleTimeString() + '</span><span class="log-cat log-cat-INFO">[CLEAR]</span><span>Log console dibersihkan.<span class="cursor-blink"></span></span></div>';
         }
 
+        function setStandbyUI() {
+            document.getElementById('stat-symbol-tf').innerText = `${cfg.symbol} ${cfg.timeframe}`;
+            const priceEl = document.getElementById('stat-live-price');
+            const deltaEl = document.getElementById('stat-tick-delta');
+            const priceCard = document.getElementById('card-price-container');
+            priceEl.innerText = '--';
+            deltaEl.innerText = 'STANDBY (TEKAN ENGAGE BOT)';
+            deltaEl.style.color = 'var(--text-muted)';
+            priceCard.classList.remove('tick-flash-up', 'tick-flash-down');
+            document.getElementById('stat-total-ticks').innerText = '0';
+            lastPrice = null;
+
+            document.getElementById('stat-sr-confirmed').innerText = '--';
+            const srDirEl = document.getElementById('stat-sr-dir-badge');
+            srDirEl.innerText = 'STANDBY';
+            srDirEl.className = 'pos-badge pos-badge-flat';
+            const srPctEl = document.getElementById('stat-sr-pct');
+            srPctEl.innerText = '0.00%';
+            srPctEl.className = 'font-bold';
+
+            const nextStatEl = document.getElementById('stat-next-status');
+            nextStatEl.innerText = 'STANDBY';
+            nextStatEl.className = 'pos-badge pos-badge-flat';
+            document.getElementById('stat-next-price').innerText = '-';
+            document.getElementById('stat-next-desc').innerText = 'Bot Standby (Tekan Engage Bot)';
+
+            document.getElementById('badge-countdown').innerText = 'STANDBY';
+            document.getElementById('badge-server-time').innerText = new Date().toLocaleTimeString();
+            updateLedVU(0, false);
+            updatePositionUI(null);
+        }
+
+        function stopEngine() {
+            isBotActive = false;
+            if (ws) {
+                try {
+                    ws.onclose = null;
+                    ws.onerror = null;
+                    ws.close();
+                } catch (e) {}
+                ws = null;
+            }
+            if (restPollTimer) {
+                clearInterval(restPollTimer);
+                restPollTimer = null;
+            }
+            setStandbyUI();
+            logEvent('STATUS', 'Bot DIHENTIKAN (STANDBY). Streaming harga & kalkulasi S/R dinonaktifkan.');
+        }
+
         async function toggleBot() {
             isBotActive = !isBotActive;
             updateBotUI(isBotActive);
             if (isBotActive) {
-                logEvent('STATUS', 'Bot BERJALAN (ACTIVE). Memulai re-warmup 1500 klines agar S/R 100% presisi...');
+                document.getElementById('stat-tick-delta').innerText = 'WARM-UP (1500 BARS)...';
+                document.getElementById('stat-tick-delta').style.color = 'var(--binance-gold)';
+                logEvent('STATUS', 'Bot BERJALAN (ACTIVE). Memulai warm-up 1500 klines & streaming Binance...');
                 await startEngine(true);
-                logEvent('STATUS', 'Pindaian sinyal S/R diaktifkan.');
+                logEvent('STATUS', 'Pemindaian sinyal S/R diaktifkan.');
             } else {
-                logEvent('STATUS', 'Bot DIHENTIKAN (STANDBY). Pemindaian dinonaktifkan.');
+                stopEngine();
             }
         }
 
@@ -1511,6 +1563,16 @@
         }
 
         function updateSrDisplay(currentPrice) {
+            if (!isBotActive) {
+                document.getElementById('stat-sr-confirmed').innerText = '--';
+                const srDirEl = document.getElementById('stat-sr-dir-badge');
+                srDirEl.innerText = 'STANDBY';
+                srDirEl.className = 'pos-badge pos-badge-flat';
+                const srPctEl = document.getElementById('stat-sr-pct');
+                srPctEl.innerText = '0.00%';
+                srPctEl.className = 'font-bold';
+                return;
+            }
             document.getElementById('stat-sr-confirmed').innerText = confirmedSr !== null ? fmtPx(confirmedSr) : '--';
             const srDirEl = document.getElementById('stat-sr-dir-badge');
             const srPctEl = document.getElementById('stat-sr-pct');
@@ -1892,6 +1954,7 @@
         // BINANCE REAL-TIME WEBSOCKET, REST POLLING & 1500-KLINES WARMUP
         // =========================================================================
         async function startEngine(force = false) {
+            if (!isBotActive) return;
             document.getElementById('stat-symbol-tf').innerText = `${cfg.symbol} ${cfg.timeframe}`;
             logEvent('INFO', `Memulai warm-up 1500 klines untuk ${cfg.symbol} (${cfg.timeframe})...`);
 
@@ -1900,6 +1963,8 @@
                 const url = `https://fapi.binance.com/fapi/v1/klines?symbol=${cfg.symbol}&interval=${cfg.timeframe}&limit=1500`;
                 const resp = await fetch(url);
                 const klines = await resp.json();
+
+                if (!isBotActive) return;
 
                 if (Array.isArray(klines) && klines.length > 0) {
                     closedCloses = [];
@@ -1922,7 +1987,7 @@
                         processClosedCandle(o, h, l, c, t);
                     });
 
-                    // Langsung set harga live dari candle terakhir agar tidak macet di CONNECTING...
+                    // Langsung set harga live dari candle terakhir
                     const lastK = klines[klines.length - 1];
                     const lastPx = parseFloat(lastK[4]);
                     lastPrice = lastPx;
@@ -1932,15 +1997,18 @@
 
                     const trendTxt = curDir ? `${curDir} (${(curPct || 0).toFixed(2)}%)` : 'FLAT';
                     logEvent('INFO', `Warm-up selesai: ${klines.length} klines diproses. S/R: ${fmtPx(confirmedSr)} [${trendTxt}]`);
+                    updateSrDisplay(lastPx);
                 }
             } catch (err) {
                 logEvent('INFO', `Warm-up error: ${err.message}. Mencoba koneksi langsung...`);
             }
 
+            if (!isBotActive) return;
+
             // Hubungkan WebSocket stream
             connectWebSocket();
 
-            // Jalankan REST polling fallback setiap 1 detik agar harga selalu jalan & tidak macet CONNECTING
+            // Jalankan REST polling fallback setiap 1 detik
             startRestPolling();
 
             // Cek saldo testnet jika API key ada
@@ -1951,10 +2019,17 @@
 
         function startRestPolling() {
             if (restPollTimer) clearInterval(restPollTimer);
+            if (!isBotActive) return;
             restPollTimer = setInterval(async () => {
+                if (!isBotActive) {
+                    clearInterval(restPollTimer);
+                    restPollTimer = null;
+                    return;
+                }
                 try {
                     const r = await fetch(`https://fapi.binance.com/fapi/v1/ticker/price?symbol=${cfg.symbol}`);
                     const d = await r.json();
+                    if (!isBotActive) return;
                     if (d && d.price) {
                         const px = parseFloat(d.price);
                         const priceEl = document.getElementById('stat-live-price');
@@ -1993,6 +2068,7 @@
             if (ws) {
                 try { ws.close(); } catch (e) {}
             }
+            if (!isBotActive) return;
 
             const streamName = `${cfg.symbol.toLowerCase()}@kline_${cfg.timeframe}`;
             const wsUrl = `wss://fstream.binance.com/ws/${streamName}`;
@@ -2002,15 +2078,20 @@
                 ws = new WebSocket(wsUrl);
 
                 ws.onopen = function() {
+                    if (!isBotActive) {
+                        try { ws.close(); } catch (e) {}
+                        return;
+                    }
                     logEvent('INFO', `WebSocket TERHUBUNG ke Binance. Stream tick aktif.`);
                     const deltaEl = document.getElementById('stat-tick-delta');
-                    if (deltaEl && deltaEl.innerText === 'CONNECTING...') {
+                    if (deltaEl && (deltaEl.innerText === 'CONNECTING...' || deltaEl.innerText.includes('WARM-UP'))) {
                         deltaEl.innerText = 'LIVE SYNC';
                         deltaEl.style.color = 'var(--binance-gold)';
                     }
                 };
 
                 ws.onmessage = function(e) {
+                    if (!isBotActive) return;
                     try {
                         const msg = JSON.parse(e.data);
                         if (!msg.k) return;
@@ -2066,8 +2147,11 @@
                 };
 
                 ws.onclose = function() {
+                    if (!isBotActive) return;
                     logEvent('INFO', 'Koneksi WebSocket terputus. Mencoba rekoneksi dalam 3 detik...');
-                    setTimeout(connectWebSocket, 3000);
+                    setTimeout(() => {
+                        if (isBotActive) connectWebSocket();
+                    }, 3000);
                 };
             } catch (err) {
                 console.error('WS init error:', err);
@@ -2076,11 +2160,13 @@
 
         // Countdown timer for bar remaining
         setInterval(() => {
-            if (expectedBarCloseMs > 0) {
+            if (isBotActive && expectedBarCloseMs > 0) {
                 const remMs = Math.max(0, expectedBarCloseMs - Date.now());
                 const mins = Math.floor(remMs / 60000);
                 const secs = Math.floor((remMs % 60000) / 1000);
                 document.getElementById('badge-countdown').innerText = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}s`;
+            } else if (!isBotActive) {
+                document.getElementById('badge-countdown').innerText = 'STANDBY';
             }
         }, 500);
 
@@ -2122,8 +2208,14 @@
 
             saveConfigToStorage();
             closeModal();
-            logEvent('INFO', `Konfigurasi disimpan. Merestart engine untuk ${cfg.symbol} (${cfg.timeframe})...`);
-            startEngine();
+            document.getElementById('stat-symbol-tf').innerText = `${cfg.symbol} ${cfg.timeframe}`;
+            if (isBotActive) {
+                logEvent('INFO', `Konfigurasi disimpan. Merestart engine untuk ${cfg.symbol} (${cfg.timeframe})...`);
+                startEngine(true);
+            } else {
+                logEvent('INFO', `Konfigurasi disimpan untuk ${cfg.symbol} (${cfg.timeframe}). Status tetap STANDBY.`);
+                setStandbyUI();
+            }
         }
 
         populateForm();
@@ -2131,7 +2223,8 @@
         renderTradesTable();
         updateBotUI(false);
         updateDashboardBalance();
-        startEngine();
+        setStandbyUI();
+        logEvent('STATUS', 'Terminal SIAGA (STANDBY). Tekan "ENGAGE BOT" untuk mengaktifkan streaming harga & pemindaian S/R.');
     </script>
 </body>
 </html>

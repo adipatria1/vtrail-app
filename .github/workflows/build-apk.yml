@@ -49,27 +49,23 @@ jobs:
         uses: softprops/action-gh-release@v2
         if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         with:
-          tag_name: v1.2.0
-          name: "VTrail Terminal Android APK v1.2.0 (Native Standalone)"
+          tag_name: v1.2.1
+          name: "VTrail Terminal Android APK v1.2.1 (Standby on Startup & Active on StartBot)"
           body: |
-            ## VTrail Binance Futures Terminal - Android APK (Native Standalone)
+            ## VTrail Binance Futures Terminal - Android APK v1.2.1 (Native Standalone)
             
             Versi ini berjalan **100% STANDALONE** langsung di HP Android tanpa perlu PC / remote server!
             
-            ### Fitur Utama:
-            - **No PC Required**: Engine Pine Script v6, WebSocket, dan Testnet API berjalan langsung di HP.
-            - **Live Binance Tick Stream**: Terhubung langsung ke `wss://fstream.binance.com`.
-            - **Testnet Integration**: Sinkronisasi saldo akun real Binance Testnet via HMAC-SHA256.
+            ### Fitur & Pembaruan v1.2.1:
+            - **Standby on App Launch**: Saat aplikasi dibuka, live price tick dan kalkulasi Confirmed S/R dalam kondisi SIAGA (STANDBY).
+            - **Engage Bot Activation**: Live WebSocket tick stream, kalkulasi S/R presisi, dan trailing stop baru aktif setelah menekan tombol **ENGAGE BOT**.
+            - **Clean Disengage**: Menekan tombol **DISENGAGE BOT** menghentikan streaming WebSocket, polling REST, dan mengembalikan terminal ke status STANDBY.
             - **Keep Screen Alive**: Layar tetap aktif saat terminal beroperasi.
             
             ### Cara Install:
             1. Download file **`vtrail-terminal.apk`** di bawah ini.
             2. Buka dan install di HP Android.
-            3. Aplikasi langsung menyala mandiri tanpa perlu server external.
-            2. Buka file APK di HP Android dan lakukan instalasi.
-            3. Pastikan server Flask berjalan di PC/VPS (`python3 app.py`).
-            4. Buka aplikasi di HP (pastikan satu Wi-Fi dengan PC).
-            5. Jika IP server berbeda, tekan tombol pengaturan untuk mengubah IP/URL.
+            3. Aplikasi langsung siap beroperasi mandiri di HP tanpa PC.
           draft: false
           prerelease: false
           files: release-apk/vtrail-terminal.apk
